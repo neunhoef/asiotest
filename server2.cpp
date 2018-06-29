@@ -86,7 +86,7 @@ class WorkerFarm {
     if (workQueue_.size() == 0) {
       auto sleeper = std::make_shared<Sleeper>();
       sleeperQueue_.push_back(sleeper);  // a copy of the shared_ptr
-      sleeper->cond_.wait(guard, [&]() { return workQueue_.size() > 0; });
+      sleeper->cond_.wait(guard);
     }
     std::unique_ptr<Work> work(std::move(workQueue_.front()));
     workQueue_.pop_front();
