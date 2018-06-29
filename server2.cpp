@@ -43,6 +43,7 @@ class WorkerFarm {
     // Returns true if successfully submitted and false if rejected
     std::lock_guard<std::mutex> guard(mutex_);
     if (workQueue_.size() >= maxQueueLen_) {
+      std::cout << "Rejecting work!" << std::endl;
       return false;
     }
     workQueue_.emplace_back(work);
