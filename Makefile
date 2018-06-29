@@ -1,6 +1,6 @@
 all: asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2
 
-CPPFLAGS = -Wall -O3 -g
+CPPFLAGS = -Wall -O3 -g -march=native
 #CPPFLAGS = -Wall -O0 -g
 
 asio_server: asio_server.cpp asio_client_server.h Makefile
