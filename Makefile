@@ -1,4 +1,4 @@
-all: asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2
+all: asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 server3
 
 CPPFLAGS = -Wall -O3 -g -march=native
 #CPPFLAGS = -Wall -O0 -g
@@ -17,6 +17,9 @@ client: client.cpp Makefile
 
 server2: server2.cpp Makefile
 	g++ ${CPPFLAGS} -o server2 server2.cpp -std=c++11 -lpthread -I asio/asio/include
+
+server3: server3.cpp Makefile
+	g++ ${CPPFLAGS} -o server3 server3.cpp -std=c++11 -lpthread -I asio/asio/include
 
 client2: client2.cpp Makefile
 	g++ ${CPPFLAGS} -o client2 client2.cpp -std=c++11 -lpthread -I asio/asio/include
