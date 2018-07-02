@@ -83,7 +83,7 @@ class WorkerFarm {
  private:
   std::unique_ptr<Work> getWork() {
     std::unique_lock<std::mutex> guard(mutex_);
-    if (workQueue_.size() == 0) {
+    while (workQueue_.size() == 0) {  // Wakeup could be spurious!
       auto sleeper = std::make_shared<Sleeper>();
       sleeperQueue_.push_back(sleeper);  // a copy of the shared_ptr
       sleeper->cond_.wait(guard);
@@ -95,7 +95,7 @@ class WorkerFarm {
  
 };
 
-WorkerFarm workerFarm(100000);
+WorkerFarm workerFarm(10000000);
 
 uint64_t globalDelay = 1;
 
