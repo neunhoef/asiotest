@@ -22,16 +22,22 @@ inline void cpu_relax() {
 #endif
 }
 
-struct spin_lock {
+class spin_lock {
     std::atomic<int> lock;
 
+public:
     spin_lock() : lock(0) {}
 
-    void get()
+    uint64_t get()
     {
+        uint64_t spins = 0;
+
         while (!try_lock()) {
           cpu_relax();  
+          spins++;
         }
+
+        return spins;
     }
 
     void release() {
@@ -64,6 +70,7 @@ class WorkerFarm {
 
   std::atomic<uint32_t> nrThreadsInRun_;
   std::atomic<uint32_t> nrThreadsAwake_;
+  std::atomic<uint64_t> num_sleeps;
   bool shouldStop_;
   std::atomic<int> tick;
 
@@ -71,7 +78,7 @@ class WorkerFarm {
 
  public:
   WorkerFarm(size_t maxQueueLen) 
-    : nrThreadsInRun_(0), nrThreadsAwake_(0), shouldStop_(false), tick(0), maxQueueLen_(maxQueueLen) {
+    : nrThreadsInRun_(0), nrThreadsAwake_(0), num_sleeps(0), shouldStop_(false), tick(0), maxQueueLen_(maxQueueLen) {
   }
 
   ~WorkerFarm() {
@@ -104,8 +111,6 @@ class WorkerFarm {
       sleeperQueue_.pop_front();
       nrThreadsAwake_++;
     }
-
-    std::cout<<"Tick: "<<tick<<" nrThreadsAwake_ "<<nrThreadsAwake_.load()<<" workQueue_.size() "<<workQueue_.size()<<std::endl;
 
     f_mutex_.release();
     return true;
@@ -153,11 +158,15 @@ class WorkerFarm {
         return work;
       }
 
-
-
       std::unique_lock<std::mutex> guard(mutex_);
-      int nawake = --nrThreadsAwake_;    // we definitly go to sleep
-      std::cout<<"Going to sleep "<<nawake<<std::endl;
+      --nrThreadsAwake_;    // we definitly go to sleep
+      num_sleeps++;
+      uint64_t exp = 1000;
+
+      if (num_sleeps.compare_exchange_strong(exp, 0)) {
+        std::cout<<"100 sleeps"<<std::endl;
+      }
+
       f_mutex_.release();
 
       // do .. while here, because we want to sleep at least once
@@ -235,7 +244,7 @@ public:
               }
             }
           } else {
-            std::cerr << "Connection closed." << std::endl;
+            //std::cerr << "Connection closed." << std::endl;
             (*counter_)--;
           }
         });
@@ -294,8 +303,8 @@ class server {
         [this, lowpos](std::error_code ec) {
           if (!ec) {
             (*this->counts_[lowpos])++;
-            std::cout << "Accepting new connection on thread " << lowpos
-                << std::endl;
+            //std::cout << "Accepting new connection on thread " << lowpos
+            //    << std::endl;
             std::make_shared<Connection>(std::move(this->socket_),
                                          this->counts_[lowpos])->start();
           }
