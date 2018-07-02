@@ -109,7 +109,10 @@ class WorkerFarm {
       std::lock_guard<std::mutex> guard(mutex_);
       sleeperQueue_.front()->cond_.notify_one();
       sleeperQueue_.pop_front();
-      nrThreadsAwake_++;
+
+      nrThreadsAwake_++;    // this is here because the thread could take some time to 
+                            // actually wake up. In that case, the code above would 
+                            // wake up multiple threads.
     }
 
     f_mutex_.release();
@@ -118,10 +121,10 @@ class WorkerFarm {
 
   // Arbitrarily many threads can call this to join the farm:
   void run() {
-    nrThreadsInRun_++;
+    int sleepCount = 0;
     nrThreadsAwake_++;
     while (true) {
-      std::unique_ptr<Work> work = getWork();
+      std::unique_ptr<Work> work = getWork(sleepCount);
       if (work == nullptr || shouldStop_) {
         break ;
       }
@@ -144,7 +147,7 @@ class WorkerFarm {
   }
 
  private:
-  std::unique_ptr<Work> getWork() {
+  std::unique_ptr<Work> getWork(int &sleepCount) {
 
     while (true) { // Wakeup could be spurious!
 
@@ -160,11 +163,11 @@ class WorkerFarm {
 
       std::unique_lock<std::mutex> guard(mutex_);
       --nrThreadsAwake_;    // we definitly go to sleep
-      num_sleeps++;
-      uint64_t exp = 1000;
+      sleepCount++;
 
-      if (num_sleeps.compare_exchange_strong(exp, 0)) {
-        std::cout<<"100 sleeps"<<std::endl;
+      if (sleepCount >= 20) {
+        std::cout<<"20 sleeps"<<std::endl;
+        sleepCount = 0;
       }
 
       f_mutex_.release();
