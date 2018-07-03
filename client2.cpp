@@ -57,7 +57,7 @@ void print_stats(std::vector<uint64_t> times) {
   for (auto& t : times) {
     sum += t;
   }
-  std::cout << "Statistics:\n";
+  /*std::cout << "Statistics:\n";
   std::cout << "Samples : " << nr << "\n";
   std::cout << "Average : " << prettyTime(sum / nr) << "\n";
   std::cout << "Median  : " << prettyTime(times[nr/2]) << "\n";
@@ -75,7 +75,9 @@ void print_stats(std::vector<uint64_t> times) {
       s = s + "  " + prettyTime(times[nr-i]) + "\n";
     }
     std::cout << "Largest:\n" << s;
-  }
+  }*/
+
+  std::cout<<"smpls="<<nr<<" avg="<<prettyTime(sum / nr)<<" med="<<prettyTime(times[nr/2]);
 }
 
 int main(int argc, char* argv[]) {
@@ -108,9 +110,8 @@ int main(int argc, char* argv[]) {
     auto endTime = std::chrono::high_resolution_clock::now();
     print_stats(times);
     uint64_t totalTime = std::chrono::nanoseconds(endTime - startTime).count();
-    std::cout << "Total time : " << prettyTime(totalTime) << "\n";
-    std::cout << "Reqs/s     : " << (double) nrtries * 1000000000.0 / totalTime
-      << std::endl;
+    //std::cout << "Total time : " << prettyTime(totalTime) << "\n";
+    std::cout << " reqs/s=" << (double) nrtries * 1000000000.0 / totalTime;
   } catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";
   }

@@ -159,7 +159,7 @@ public:
               }
             }
           } else {
-            std::cerr << "Connection closed." << std::endl;
+            //std::cerr << "Connection closed." << std::endl;
             (*counter_)--;
           }
         });
@@ -218,8 +218,8 @@ class server {
         [this, lowpos](std::error_code ec) {
           if (!ec) {
             (*this->counts_[lowpos])++;
-            std::cout << "Accepting new connection on thread " << lowpos
-                << std::endl;
+            //std::cout << "Accepting new connection on thread " << lowpos
+            //    << std::endl;
             std::make_shared<Connection>(std::move(this->socket_),
                                          this->counts_[lowpos])->start();
           }

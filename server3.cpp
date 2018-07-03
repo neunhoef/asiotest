@@ -57,8 +57,17 @@ struct Work {
   }
 };
 
+struct WorkerStat {
+  uint64_t num_sleeps;
+  uint64_t spin_tries;
+  uint64_t spin_count;
+
+  WorkerStat() : num_sleeps(0), spin_tries(0), spin_count(0) {}
+};
+
 class WorkerFarm {
   std::mutex mutex_;
+  std::mutex f_mutex_2; // added for testing purpose
   spin_lock f_mutex_;
 
   struct Sleeper {
@@ -72,7 +81,7 @@ class WorkerFarm {
   std::atomic<uint32_t> nrThreadsAwake_;
   std::atomic<uint64_t> num_sleeps;
   bool shouldStop_;
-  std::atomic<int> tick;
+  int tick; // guared by f_mutex_
 
   size_t maxQueueLen_;
 
@@ -90,9 +99,11 @@ class WorkerFarm {
   bool submit(Work* work) {
     // Returns true if successfully submitted and false if rejected
     
+    //f_mutex_2.lock();
     f_mutex_.get();
 
     if (workQueue_.size() >= maxQueueLen_) {
+      //f_mutex_2.unlock();
       f_mutex_.release();
       return false;
     }
@@ -105,31 +116,34 @@ class WorkerFarm {
       tick--;
     }
 
-    if (tick <= 0 && sleeperQueue_.size() > 0) {
+    if ((tick <= 0 && nrThreadsAwake_ < nrThreadsInRun_) || nrThreadsAwake_ == 0) {
       std::lock_guard<std::mutex> guard(mutex_);
-      sleeperQueue_.front()->cond_.notify_one();
-      sleeperQueue_.pop_front();
-
-      nrThreadsAwake_++;    // this is here because the thread could take some time to 
-                            // actually wake up. In that case, the code above would 
-                            // wake up multiple threads.
+      if (sleeperQueue_.size() == 0) {
+        // THIS HAPPENDS VERY OFTEN!
+      } else {
+        sleeperQueue_.front()->cond_.notify_one();
+        sleeperQueue_.pop_front();
+      }
     }
 
+    //f_mutex_2.unlock();
     f_mutex_.release();
     return true;
   }
 
   // Arbitrarily many threads can call this to join the farm:
-  void run() {
-    int sleepCount = 0;
+  void run(WorkerStat &stat) {
+
+    nrThreadsInRun_++;
     nrThreadsAwake_++;
     while (true) {
-      std::unique_ptr<Work> work = getWork(sleepCount);
+      std::unique_ptr<Work> work = getWork(stat);
       if (work == nullptr || shouldStop_) {
         break ;
       }
       work->doit();
     }
+
     nrThreadsInRun_--;
   }
 
@@ -139,46 +153,50 @@ class WorkerFarm {
   // left it.
   void stop() {
     shouldStop_ = true;
+    f_mutex_.get();
     std::lock_guard<std::mutex> guard(mutex_);
     while (sleeperQueue_.size() > 0) {
       sleeperQueue_.front()->cond_.notify_one();
       sleeperQueue_.pop_front();
     }
+    f_mutex_.release();
   }
 
  private:
-  std::unique_ptr<Work> getWork(int &sleepCount) {
 
-    while (true) { // Wakeup could be spurious!
 
-      f_mutex_.get();
+
+  std::unique_ptr<Work> getWork(WorkerStat &stat) {
+
+    while (!shouldStop_) { // Wakeup could be spurious!
+      //f_mutex_2.lock();
+      
+      stat.spin_tries++;
+      stat.spin_count += f_mutex_.get();
 
       if (workQueue_.size() != 0) {
         std::unique_ptr<Work> work(std::move(workQueue_.front()));
         workQueue_.pop_front();
+        //f_mutex_2.unlock();
         f_mutex_.release();
-
         return work;
       }
 
       std::unique_lock<std::mutex> guard(mutex_);
-      --nrThreadsAwake_;    // we definitly go to sleep
-      sleepCount++;
-
-      if (sleepCount >= 20) {
-        std::cout<<"20 sleeps"<<std::endl;
-        sleepCount = 0;
-      }
-
+      --nrThreadsAwake_;
+      // we definitly go to sleep
+      stat.num_sleeps++;
+      //f_mutex_2.unlock();
       f_mutex_.release();
 
-      // do .. while here, because we want to sleep at least once
       auto sleeper = std::make_shared<Sleeper>();
       sleeperQueue_.push_back(sleeper);  // a copy of the shared_ptr
       sleeper->cond_.wait(guard);
-
+      nrThreadsAwake_++;
     }
 
+
+    return nullptr;
   }
  
 };
@@ -240,7 +258,7 @@ public:
                 do_read();
               } else {
                 // Actually work:
-                //auto self(shared_from_this());
+                auto self(shared_from_this());
                 CountWork* work
                   = new CountWork([this, self]() { this->do_write(); });
                 workerFarm.submit(work);
@@ -322,6 +340,12 @@ class server {
   std::vector<std::shared_ptr<std::atomic<uint32_t>>> counts_;
 };
 
+std::function<void(int)> sigusr1_handler;
+
+void _sigusr1_handler(int signal) { 
+  sigusr1_handler(signal); 
+}
+
 int main(int argc, char* argv[])
 {
   try {
@@ -334,9 +358,9 @@ int main(int argc, char* argv[])
     int nrIOThreads = std::atoi(argv[2]);
     int nrThreads = std::atoi(argv[3]);
     globalDelay = std::atol(argv[4]);
-    std::cout << "Hello, using " << nrIOThreads << " IOthreads and "
-      << nrThreads << " worker threads with a delay of " << globalDelay
-      << std::endl;
+    //std::cerr << "Hello, using " << nrIOThreads << " IOthreads and "
+    //  << nrThreads << " worker threads with a delay of " << globalDelay
+    //  << std::endl;
 
     std::vector<std::unique_ptr<asio::io_context>> io_contexts;
     std::vector<asio::io_context::work> works;
@@ -347,18 +371,44 @@ int main(int argc, char* argv[])
 
     server s(io_contexts, port);
 
+    std::signal(SIGUSR2, _sigusr1_handler);
+    sigusr1_handler = [&](int signal) {
+        // Stop all io contexts
+        for (int i = 0; i < nrIOThreads; i++) {
+          io_contexts[i]->stop();
+        }
+
+        // stop worker farm
+        workerFarm.stop();
+    };
+
     // Start some threads:
     std::vector<std::thread> threads;
     for (int i = 1; i < nrIOThreads; i++) {
       threads.emplace_back([&io_contexts, i]() { io_contexts[i]->run(); });
     }
+
+    std::vector<WorkerStat> stats(nrThreads);
     for (int i = 0; i < nrThreads; ++i) {
-      threads.emplace_back([&]() { workerFarm.run(); });
+      threads.emplace_back([i, &stats]() { workerFarm.run(stats[i]); });
     }
     io_contexts[0]->run();   // Start accepting
+
     for (size_t i = 0; i < threads.size(); ++i) {
       threads[i].join();
     }
+
+
+    WorkerStat aggre;
+    for (int i = 0; i < nrThreads; i++) {
+      aggre.num_sleeps += stats[i].num_sleeps;
+      aggre.spin_count += stats[i].spin_count;
+      aggre.spin_tries += stats[i].spin_tries;
+      //std::cout<<i<<": sleeps="<<stats[i].num_sleeps<<" spin_count="<<stats[i].spin_count<<" spin_tries="<<stats[i].spin_tries<<std::endl;
+    }
+    std::cout<<" IO="<<nrIOThreads<<" W="<<nrThreads<<" sleeps="<<aggre.num_sleeps<<" spin_count="<<aggre.spin_count<<" spin_tries="<<aggre.spin_tries
+      <<" s-avg="<<(aggre.spin_count/aggre.spin_tries) <<std::endl;
+
   }
   catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";
