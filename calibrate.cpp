@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <atomic>
 
 struct Times {
   std::chrono::high_resolution_clock::time_point post;
@@ -20,22 +21,41 @@ double timeDiff(std::chrono::high_resolution_clock::time_point& a,
 
 uint64_t avoidOptimization = 0;
 
+// This will calibrate a delay loop and return a number to which to
+// count to create a busy worker of `seconds` seconds.
+int64_t x = 0;
+
+int64_t runner(int64_t n, int64_t i) {
+  for (int64_t j = 0; j < n; j++) {
+    x += j*j;
+  }
+  return x;
+};
+
+std::atomic<bool> raus(false);
+
+void stoerfeuer() {
+  int64_t i = 1;
+  while (!raus) {
+    runner(25000, i++);
+  }
+}
+
 int main(int argc, char* argv[]) {
 
   double seconds = 0.001;
+  size_t nrStoer = 0;
   if (argc > 1) {
     seconds = std::strtold(argv[1], nullptr);
-  }
-
-  // This will calibrate a delay loop and return a number to which to
-  // count to create a busy worker of `seconds` seconds.
-  auto runner = [](int64_t n, int64_t i) -> int64_t {
-    static int64_t x = 0;
-    for (int64_t j = 0; j < n; j++) {
-      x += j*j;
+    if (argc > 2) {
+      nrStoer = std::atoi(argv[2]);
     }
-    return x;
-  };
+  }
+  // Create Stoerfeuer:
+  std::vector<std::thread> stoerer;
+  for (size_t i = 0; i < nrStoer; ++i) {
+    stoerer.emplace_back(stoerfeuer);
+  }
 
   std::cout << "Calibrating for time " << seconds << " ..." << std::endl;
   std::cout << "Warming up CPU..." << std::endl;
@@ -98,6 +118,11 @@ int main(int argc, char* argv[]) {
                                    : (times[mid-1] + times[mid]) / 2;
   std::cout << "Calibration result: n=" << n << ", t(avg)=" << sumd/rep
     << ", t(med)=" << median << std::endl;
+
+  raus = true;
+  for (auto& s : stoerer) {
+    s.join();
+  }
   return 0;
 }
 
