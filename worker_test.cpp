@@ -159,13 +159,16 @@ class WorkerFarm {
     nrThreadsAwake_++;
     auto run_start = std::chrono::high_resolution_clock::now();
     while (true) {
-      std::unique_ptr<Work> work = getWork(stat);
-      if (work == nullptr || shouldStop_) {
-        break ;
-      }
-      stat.num_work++;
       auto start = std::chrono::high_resolution_clock::now();
-      work->doit();
+      {
+	      std::unique_ptr<Work> work = getWork(stat);
+	      if (work == nullptr || shouldStop_) {
+	        break ;
+	      }
+	      stat.num_work++;
+	      
+	      work->doit();
+      }
       auto end = std::chrono::high_resolution_clock::now();
       stat.work_time += std::chrono::nanoseconds(end - start).count();
     }
