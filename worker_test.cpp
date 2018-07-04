@@ -79,6 +79,8 @@ struct WorkerStat {
   uint64_t num_sleeps;
   uint64_t work_time;
   uint64_t num_work;
+  uint64_t run_time;
+  uint64_t wait_time;
 
   cacheline_pad_t pad_1;
 
@@ -102,13 +104,14 @@ class WorkerFarm {
   std::atomic<uint32_t> nrThreadsAwake_;
   std::atomic<uint64_t> num_sleeps;
   bool shouldStop_;
+  std::atomic<bool> stopIfFinish_;
   int tick; // guared by f_mutex_
 
   size_t maxQueueLen_;
 
  public:
   WorkerFarm(size_t maxQueueLen) 
-    : nrThreadsInRun_(0), nrThreadsAwake_(0), num_sleeps(0), shouldStop_(false), tick(0), maxQueueLen_(maxQueueLen) {
+    : nrThreadsInRun_(0), nrThreadsAwake_(0), num_sleeps(0), shouldStop_(false), stopIfFinish_(false), tick(0), maxQueueLen_(maxQueueLen) {
   }
 
   ~WorkerFarm() {
@@ -154,6 +157,7 @@ class WorkerFarm {
 
     nrThreadsInRun_++;
     nrThreadsAwake_++;
+    auto run_start = std::chrono::high_resolution_clock::now();
     while (true) {
       std::unique_ptr<Work> work = getWork(stat);
       if (work == nullptr || shouldStop_) {
@@ -166,6 +170,9 @@ class WorkerFarm {
       stat.work_time += std::chrono::nanoseconds(end - start).count();
     }
 
+    auto run_end = std::chrono::high_resolution_clock::now();
+
+    stat.run_time = std::chrono::nanoseconds(run_end - run_start).count();
     nrThreadsInRun_--;
   }
 
@@ -177,6 +184,18 @@ class WorkerFarm {
     shouldStop_ = true;
     FUTEX_LOCK;
     std::lock_guard<std::mutex> guard(mutex_);
+    while (sleeperQueue_.size() > 0) {
+      sleeperQueue_.front()->cond_.notify_one();
+      sleeperQueue_.pop_front();
+    }
+    FUTEX_UNLOCK;
+  }
+
+  void stopWhenDone()
+  {
+  	stopIfFinish_ = true;
+    std::lock_guard<std::mutex> guard(mutex_);
+    FUTEX_LOCK;
     while (sleeperQueue_.size() > 0) {
       sleeperQueue_.front()->cond_.notify_one();
       sleeperQueue_.pop_front();
@@ -200,6 +219,11 @@ class WorkerFarm {
         return work;
       }
 
+      if (stopIfFinish_) {
+      	FUTEX_UNLOCK;
+      	break ;
+      }
+
       std::unique_lock<std::mutex> guard(mutex_);
       --nrThreadsAwake_;
       // we definitly go to sleep
@@ -208,7 +232,10 @@ class WorkerFarm {
 
       auto sleeper = std::make_shared<Sleeper>();
       sleeperQueue_.push_back(sleeper);  // a copy of the shared_ptr
+      auto wait_start = std::chrono::high_resolution_clock::now();
       sleeper->cond_.wait(guard);
+      auto wait_end = std::chrono::high_resolution_clock::now();
+      stat.wait_time += std::chrono::nanoseconds(wait_end - wait_start).count();
       nrThreadsAwake_++;
     }
 
@@ -252,6 +279,15 @@ void _sigusr1_handler(int signal) {
   sigusr1_handler(signal); 
 }
 
+struct IOStats
+{
+  cacheline_pad_t pad_0;
+  uint64_t num_submits;
+  uint64_t submit_time;
+  uint64_t run_time;
+  cacheline_pad_t pad_1;
+};
+
 int main(int argc, char* argv[])
 {
   try {
@@ -271,12 +307,13 @@ int main(int argc, char* argv[])
     std::vector<std::thread> threads;
 
     std::vector<WorkerStat> stats(nrThreads);
+    std::vector<IOStats> iostats(nrIOThreads);
     
     for (int i = 0; i < nrThreads; ++i) {
       threads.emplace_back([i, &stats]() { workerFarm.run(stats[i]); });
     }
 
-    std::signal(SIGUSR2, _sigusr1_handler);
+    std::signal(SIGINT, _sigusr1_handler);
     sigusr1_handler = [&](int signal) {
         // stop worker farm
         workerFarm.stop();
@@ -284,26 +321,57 @@ int main(int argc, char* argv[])
 
 
     for (int i = 0; i < nrIOThreads; ++i) {
-      threads.emplace_back([]() {
+      threads.emplace_back([i, &iostats]() {
+
+      	IOStats &stat = iostats[i];
+
+      	auto run_start = std::chrono::high_resolution_clock::now();
 
       	for (int i = 0; i < 50000; i++)
       	{
       		CountWork* work = new CountWork([](){});
+      		auto submit_start = std::chrono::high_resolution_clock::now();
             workerFarm.submit(work);
+            stat.num_submits++;
+            auto submit_stop = std::chrono::high_resolution_clock::now();
+
+            uint64_t submit_time = std::chrono::nanoseconds(submit_stop - submit_start).count();
+            stat.submit_time += submit_time;
             usleep(20);
       	}
+
+      	auto run_end = std::chrono::high_resolution_clock::now();
+
+      	stat.run_time = std::chrono::nanoseconds(run_end - run_start).count();
       });
     }
 
-    // sizeof(WorkerStat) == 64, How to align on cache lines?
-    for (size_t i = 0; i < threads.size(); ++i) {
+
+
+    // wait for the IO threads to finish their job
+    for (size_t i = nrThreads; i < threads.size(); ++i) {
       threads[i].join();
     }
+
+    std::cout<<"IO Threads done. Wait for farm."<<std::endl;
+    workerFarm.stopWhenDone();
+
+    // now wait for the worker threads to end
+    for (int i = 0; i < nrThreads; ++i) {
+      threads[i].join();
+    }
+
 
     // now aggregate the statistics
     for (int i = 0; i < nrThreads; i++) {
     	std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work << " work_time: " << stats[i].work_time << "ns avg. work_time: " <<
-    	 	stats[i].work_time / (1000.0 * stats[i].num_work) << "ns" << std::endl;
+    	 	stats[i].work_time / (1000.0 * stats[i].num_work) << "ns run_time: " << stats[i].run_time <<
+    	 	"ns wait_time: " << stats[i].wait_time << "ns" << std::endl;
+    }
+
+    for (int i = 0; i < nrIOThreads; i++) {
+    	std::cout<< i << " num_submits: " << iostats[i].num_submits << " submit_time: " << iostats[i].submit_time << "ns avg. submit_time: " <<
+    		 iostats[i].submit_time / iostats[i].num_submits << "ns run_time: " << iostats[i].run_time << "ns" << std::endl;
     }
 
     /*std::cout<<" IO="<<nrIOThreads<<" W="<<nrThreads<<" sleeps="<<aggre.num_sleeps<<" spin_count="<<aggre.spin_count<<" spin_tries="<<aggre.spin_tries
