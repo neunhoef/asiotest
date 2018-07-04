@@ -4,230 +4,15 @@
 #include <utility>
 #include <deque>
 #include "asio.hpp"
+#include "richard_worker_farm.h"
 
 using asio::ip::tcp;
 
-inline void cpu_relax() {
-// TODO use <boost/fiber/detail/cpu_relax.hpp> when available (>1.65.0?)
-#if defined(__i386) || defined(_M_IX86) || defined(__x86_64__) || \
-    defined(_M_X64)
-#if defined _WIN32
-  YieldProcessor();
-#else
-  asm volatile("pause" ::: "memory");
-#endif
-#else
-  static constexpr std::chrono::microseconds us0{0};
-  std::this_thread::sleep_for(us0);
-#endif
-}
-
-class spin_lock {
-    std::atomic<int> lock;
-
-public:
-    spin_lock() : lock(0) {}
-
-    uint64_t get()
-    {
-        uint64_t spins = 0;
-
-        while (!try_lock()) {
-          cpu_relax();  
-          spins++;
-        }
-
-        return spins;
-    }
-
-    void release() {
-        lock.store(0);
-    }
-
-    bool try_lock() {
-        int v = lock.exchange(1);
-
-        return v == 0;
-    }    
-};
-
-// Derive from this class to submit work to the WorkerFarm:
-struct Work {
-  virtual void doit() {
-  }
-};
-
-struct WorkerStat {
-  uint64_t num_sleeps;
-  uint64_t spin_tries;
-  uint64_t spin_count;
-
-  WorkerStat() : num_sleeps(0), spin_tries(0), spin_count(0) {}
-};
-
-class WorkerFarm {
-  std::mutex mutex_;
-  std::mutex f_mutex_2; // added for testing purpose
-  spin_lock f_mutex_;
-
-  struct Sleeper {
-    std::condition_variable cond_;
-  };
-
-  std::deque<std::shared_ptr<Sleeper>> sleeperQueue_;
-  std::deque<std::unique_ptr<Work>>    workQueue_;
-
-  std::atomic<uint32_t> nrThreadsInRun_;
-  std::atomic<uint32_t> nrThreadsAwake_;
-  std::atomic<uint64_t> num_sleeps;
-  bool shouldStop_;
-  int tick; // guared by f_mutex_
-
-  size_t maxQueueLen_;
-
- public:
-  WorkerFarm(size_t maxQueueLen) 
-    : nrThreadsInRun_(0), nrThreadsAwake_(0), num_sleeps(0), shouldStop_(false), tick(0), maxQueueLen_(maxQueueLen) {
-  }
-
-  ~WorkerFarm() {
-    while (nrThreadsInRun_ > 0) {
-      usleep(100);
-    }
-  }
-
-  bool submit(Work* work) {
-    // Returns true if successfully submitted and false if rejected
-    
-    //f_mutex_2.lock();
-    f_mutex_.get();
-
-    if (workQueue_.size() >= maxQueueLen_) {
-      //f_mutex_2.unlock();
-      f_mutex_.release();
-      return false;
-    }
-
-    workQueue_.emplace_back(work);
-
-    if (workQueue_.size() < nrThreadsAwake_) {
-      tick = nrThreadsAwake_;
-    } else {
-      tick--;
-    }
-
-    if ((tick <= 0 && nrThreadsAwake_ < nrThreadsInRun_) || nrThreadsAwake_ == 0) {
-      std::lock_guard<std::mutex> guard(mutex_);
-      if (sleeperQueue_.size() == 0) {
-        // THIS HAPPENDS VERY OFTEN!
-      } else {
-        sleeperQueue_.front()->cond_.notify_one();
-        sleeperQueue_.pop_front();
-      }
-    }
-
-    //f_mutex_2.unlock();
-    f_mutex_.release();
-    return true;
-  }
-
-  // Arbitrarily many threads can call this to join the farm:
-  void run(WorkerStat &stat) {
-
-    nrThreadsInRun_++;
-    nrThreadsAwake_++;
-    while (true) {
-      std::unique_ptr<Work> work = getWork(stat);
-      if (work == nullptr || shouldStop_) {
-        break ;
-      }
-      work->doit();
-    }
-
-    nrThreadsInRun_--;
-  }
-
-  // Call this from any thread to stop the work farm, work items will be
-  // completed but no new work is begun. This function returns immediately,
-  // the destructor waits until all threads running in the run method have
-  // left it.
-  void stop() {
-    shouldStop_ = true;
-    f_mutex_.get();
-    std::lock_guard<std::mutex> guard(mutex_);
-    while (sleeperQueue_.size() > 0) {
-      sleeperQueue_.front()->cond_.notify_one();
-      sleeperQueue_.pop_front();
-    }
-    f_mutex_.release();
-  }
-
- private:
 
 
-
-  std::unique_ptr<Work> getWork(WorkerStat &stat) {
-
-    while (!shouldStop_) { // Wakeup could be spurious!
-      //f_mutex_2.lock();
-      
-      stat.spin_tries++;
-      stat.spin_count += f_mutex_.get();
-
-      if (workQueue_.size() != 0) {
-        std::unique_ptr<Work> work(std::move(workQueue_.front()));
-        workQueue_.pop_front();
-        //f_mutex_2.unlock();
-        f_mutex_.release();
-        return work;
-      }
-
-      std::unique_lock<std::mutex> guard(mutex_);
-      --nrThreadsAwake_;
-      // we definitly go to sleep
-      stat.num_sleeps++;
-      //f_mutex_2.unlock();
-      f_mutex_.release();
-
-      auto sleeper = std::make_shared<Sleeper>();
-      sleeperQueue_.push_back(sleeper);  // a copy of the shared_ptr
-      sleeper->cond_.wait(guard);
-      nrThreadsAwake_++;
-    }
-
-
-    return nullptr;
-  }
- 
-};
-
-WorkerFarm workerFarm(10000000);
+RichardWorkerFarm workerFarm(10000000);
 
 uint64_t globalDelay = 1;
-
-class CountWork : public Work {
-
-  uint64_t dummy_;
-  std::function<void()> completion_;
-
- public:
-  CountWork(std::function<void()>&& c) : dummy_(0), completion_(c) {
-  }
-
-  void doit() override final {
-    delayRunner(globalDelay);
-    completion_();
-  }
-
- private:
-  uint64_t delayRunner(uint64_t delay) {
-    for (uint64_t i = 0; i < delay; ++i) {
-      dummy_ += i * i;
-    }
-    return dummy_;
-  }
-
-};
 
 class Connection : public std::enable_shared_from_this<Connection> {
 public:
@@ -260,7 +45,7 @@ public:
                 // Actually work:
                 auto self(shared_from_this());
                 CountWork* work
-                  = new CountWork([this, self]() { this->do_write(); });
+                  = new CountWork([this, self]() { this->do_write(); }, globalDelay);
                 workerFarm.submit(work);
               }
             }
@@ -397,17 +182,6 @@ int main(int argc, char* argv[])
     for (size_t i = 0; i < threads.size(); ++i) {
       threads[i].join();
     }
-
-
-    WorkerStat aggre;
-    for (int i = 0; i < nrThreads; i++) {
-      aggre.num_sleeps += stats[i].num_sleeps;
-      aggre.spin_count += stats[i].spin_count;
-      aggre.spin_tries += stats[i].spin_tries;
-      //std::cout<<i<<": sleeps="<<stats[i].num_sleeps<<" spin_count="<<stats[i].spin_count<<" spin_tries="<<stats[i].spin_tries<<std::endl;
-    }
-    std::cout<<" IO="<<nrIOThreads<<" W="<<nrThreads<<" sleeps="<<aggre.num_sleeps<<" spin_count="<<aggre.spin_count<<" spin_tries="<<aggre.spin_tries
-      <<" s-avg="<<(aggre.spin_count/aggre.spin_tries) <<std::endl;
 
   }
   catch (std::exception& e) {
