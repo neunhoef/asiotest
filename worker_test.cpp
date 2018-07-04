@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <csignal>
 #include <algorithm>
+#include <fstream>
 
 #include <unistd.h>
 
@@ -90,6 +91,7 @@ struct WorkerStat {
 
 class WorkerFarm {
 
+public:
   std::mutex mutex_;
   std::mutex f_mutex_2; // added for testing purpose
   spin_lock f_mutex_;
@@ -209,8 +211,6 @@ class WorkerFarm {
 
  private:
 
-
-
   std::unique_ptr<Work> getWork(WorkerStat &stat) {
 
     while (!shouldStop_) { // Wakeup could be spurious!
@@ -293,8 +293,8 @@ int main(int argc, char* argv[])
   	// Worker threads do work that should take ~20us. The `iothreads` insert work into the queue every
   	// x ms. This should test the performance of the `backend`.
 
-    if (argc != 4) {
-      std::cerr << "Usage: worker_test <nriothreads> <nrthreads> <workerdelay>\n";
+    if (argc != 5) {
+      std::cerr << "Usage: worker_test <nriothreads> <nrthreads> <workerdelay> <queuestate-file>\n";
       return 1;
     }
 
@@ -349,7 +349,32 @@ int main(int argc, char* argv[])
       });
     }
 
+    std::fstream output(argv[4], std::fstream::out | std::fstream::trunc);
+    bool stopStatReader = false;
 
+
+    std::thread statReader([&output, &stopStatReader] () {
+    	uint64_t t = 0;
+
+    	while (!stopStatReader)
+    	{
+    		uint64_t queue_size;
+
+	    	// get the locks
+	    	workerFarm.FUTEX_LOCK;
+	    	workerFarm.mutex_.lock();
+	    	queue_size = workerFarm.workQueue_.size();
+	    	workerFarm.mutex_.unlock();
+	    	workerFarm.FUTEX_UNLOCK;
+
+
+	    	output << t++ << " " <<  queue_size << std::endl;
+
+	    	usleep(50000);
+    	}
+
+    	std::cout<<"Reader stopped."<<std::endl;
+    });
 
     // wait for the IO threads to finish their job
     for (size_t i = nrThreads; i < threads.size(); ++i) {
@@ -364,6 +389,8 @@ int main(int argc, char* argv[])
       threads[i].join();
     }
 
+    stopStatReader = true;
+    statReader.join();
 
     // now aggregate the statistics
     for (int i = 0; i < nrThreads; i++) {
