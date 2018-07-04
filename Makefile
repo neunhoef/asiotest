@@ -1,4 +1,4 @@
-all: asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 server3 server4
+all: asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 server3 server4 calibrate
 
 CPPFLAGS = -Wall -O3 -g -march=native
 #CPPFLAGS = -Wall -O0 -g
@@ -33,8 +33,11 @@ asio_server_varlen: asio_server_varlen.cpp Makefile
 asio_client_varlen: asio_client_varlen.cpp Makefile
 	g++ ${CPPFLAGS} -o asio_client_varlen asio_client_varlen.cpp -std=c++11 -lpthread -I asio/asio/include
 
+calibrate: calibrate.cpp Makefile
+	g++ ${CPPFLAGS} -o calibrate calibrate.cpp -std=c++11
+
 getasio:
 	git clone https://github.com/chriskohlhoff/asio
 
 clean:
-	rm -rf asio_client asio_server asio_server_varlen asio_client_varlen client server client2 server2 server3 server4
+	rm -rf asio_client asio_server asio_server_varlen asio_client_varlen client server client2 server2 server3 server4 calibrate
