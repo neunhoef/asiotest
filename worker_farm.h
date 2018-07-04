@@ -1,6 +1,22 @@
 #ifndef WORKER_FARM_H
 #define WORKER_FARM_H
 
+static size_t const     cacheline_size = 64;
+typedef char            cacheline_pad_t [cacheline_size];
+
+struct WorkerStat {
+  cacheline_pad_t pad_0;
+
+  uint64_t num_sleeps;
+  
+  uint64_t work_time;
+  uint64_t num_work;
+
+  cacheline_pad_t pad_1;
+
+  WorkerStat() : num_sleeps(0), work_time(0), num_work(0) {}
+};
+
 struct Work {
   virtual ~Work() {};
   virtual void doit() = 0;
@@ -15,7 +31,7 @@ public:
 
 	virtual void stopWhenDone() = 0;
 	virtual void stop() = 0;
-	virtual void run() = 0;
+	virtual void run(WorkerStat &stat) = 0;
 };
 
 class CountWork : public Work {

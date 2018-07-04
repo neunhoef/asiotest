@@ -1,6 +1,8 @@
-#ifndef RICHARD_WORKER_FARM
-#define RICHARD_WORKER_FARM
+#ifndef LF_RICHARD_WORKER_FARM
+#define LF_RICHARD_WORKER_FARM
+#include <boost/lockfree/queue.hpp>
 #include "worker_farm.h"
+
 
 #ifndef SPIN_LOCK_RICHARD
 #define SPIN_LOCK_RICHARD
@@ -57,7 +59,9 @@ public:
 };
 #endif
 
-class RichardWorkerFarm : public WorkerFarm {
+
+
+class LockfreeRichardWorkerFarm : public WorkerFarm {
 
 public:
   std::mutex mutex_;
@@ -69,7 +73,7 @@ public:
   };
 
   std::deque<std::shared_ptr<Sleeper>> sleeperQueue_;
-  std::deque<std::unique_ptr<Work>>    workQueue_;
+  boost::lockfree::queue<Work*>    workQueue_;
 
   std::atomic<uint32_t> nrThreadsInRun_;
   std::atomic<uint32_t> nrThreadsAwake_;
@@ -77,15 +81,16 @@ public:
   bool shouldStop_;
   std::atomic<bool> stopIfFinish_;
   int tick; // guared by f_mutex_
+  std::atomic<unsigned> size_;
 
   size_t maxQueueLen_;
 
  public:
-  RichardWorkerFarm(size_t maxQueueLen) 
-    : nrThreadsInRun_(0), nrThreadsAwake_(0), num_sleeps(0), shouldStop_(false), stopIfFinish_(false), tick(0), maxQueueLen_(maxQueueLen) {
+  LockfreeRichardWorkerFarm(size_t maxQueueLen) 
+    : workQueue_(maxQueueLen), nrThreadsInRun_(0), nrThreadsAwake_(0), num_sleeps(0), shouldStop_(false), stopIfFinish_(false), tick(0), maxQueueLen_(maxQueueLen) {
   }
 
-  ~RichardWorkerFarm() {
+  ~LockfreeRichardWorkerFarm() {
     while (nrThreadsInRun_ > 0) {
       usleep(100);
     }
@@ -96,14 +101,16 @@ public:
     
     FUTEX_LOCK;
 
-    if (workQueue_.size() >= maxQueueLen_) {
+    // Not directly implemented in lockfree queue -- ignore for testing.
+    if (size_ >= maxQueueLen_) {
       FUTEX_UNLOCK;
       return false;
     }
 
-    workQueue_.emplace_back(work);
+    workQueue_.push(work);
+    size_++;
 
-    if (workQueue_.size() < nrThreadsAwake_) {
+    if (size_ < nrThreadsAwake_) {
       tick = nrThreadsAwake_;
     } else {
       tick--;
@@ -136,6 +143,7 @@ public:
       stat.num_work++;
       auto start = std::chrono::high_resolution_clock::now();
       work->doit();
+      
       auto end = std::chrono::high_resolution_clock::now();
       stat.work_time += std::chrono::nanoseconds(end - start).count();
     }
@@ -177,12 +185,14 @@ public:
     while (!shouldStop_) { // Wakeup could be spurious!
       FUTEX_LOCK;
 
-      if (workQueue_.size() != 0) {
-        std::unique_ptr<Work> work(std::move(workQueue_.front()));
-        workQueue_.pop_front();
+      Work *work;
+      if (workQueue_.pop(work))
+      {
+        size_--;
         FUTEX_UNLOCK;
-        return work;
+        return std::unique_ptr<Work>(work);
       }
+      
 
       if (stopIfFinish_) {
       	FUTEX_UNLOCK;
@@ -198,7 +208,6 @@ public:
       auto sleeper = std::make_shared<Sleeper>();
       sleeperQueue_.push_back(sleeper);  // a copy of the shared_ptr
       sleeper->cond_.wait(guard);
-
       nrThreadsAwake_++;
     }
 

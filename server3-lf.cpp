@@ -1,19 +1,18 @@
-#include <atomic>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <utility>
-#include <boost/lockfree/queue.hpp>
+#include <deque>
 #include "asio.hpp"
-#include "futex_worker_farm.h"
+#include "lockfree_richard_worker_farm.h"
 
 using asio::ip::tcp;
 
-FutexWorkerFarm workerFarm(10000000);
+
+
+LockfreeRichardWorkerFarm workerFarm(10000000);
 
 uint64_t globalDelay = 1;
-
-
 
 class Connection : public std::enable_shared_from_this<Connection> {
 public:
@@ -44,7 +43,9 @@ public:
                 do_read();
               } else {
                 // Actually work:
-                CountWork* work = new CountWork([this, self]() { this->do_write(); }, globalDelay);
+                auto self(shared_from_this());
+                CountWork* work
+                  = new CountWork([this, self]() { this->do_write(); }, globalDelay);
                 workerFarm.submit(work);
               }
             }
@@ -124,11 +125,17 @@ class server {
   std::vector<std::shared_ptr<std::atomic<uint32_t>>> counts_;
 };
 
+std::function<void(int)> sigusr1_handler;
+
+void _sigusr1_handler(int signal) { 
+  sigusr1_handler(signal); 
+}
+
 int main(int argc, char* argv[])
 {
   try {
     if (argc != 5) {
-      std::cerr << "Usage: server4 <port> <nriothreads> <nrthreads> <delay>\n";
+      std::cerr << "Usage: server3 <port> <nriothreads> <nrthreads> <delay>\n";
       return 1;
     }
 
@@ -136,9 +143,9 @@ int main(int argc, char* argv[])
     int nrIOThreads = std::atoi(argv[2]);
     int nrThreads = std::atoi(argv[3]);
     globalDelay = std::atol(argv[4]);
-    std::cout << "Hello, using " << nrIOThreads << " IOthreads and "
-      << nrThreads << " worker threads with a delay of " << globalDelay
-      << std::endl;
+    //std::cerr << "Hello, using " << nrIOThreads << " IOthreads and "
+    //  << nrThreads << " worker threads with a delay of " << globalDelay
+    //  << std::endl;
 
     std::vector<std::unique_ptr<asio::io_context>> io_contexts;
     std::vector<asio::io_context::work> works;
@@ -149,11 +156,17 @@ int main(int argc, char* argv[])
 
     server s(io_contexts, port);
 
-    for (int i = 0; i < 10000; ++i) {
-      CountWork* work = new CountWork([](){}, globalDelay);
-      workerFarm.submit(work);
-    }
-    
+    std::signal(SIGUSR2, _sigusr1_handler);
+    sigusr1_handler = [&](int signal) {
+        // Stop all io contexts
+        for (int i = 0; i < nrIOThreads; i++) {
+          io_contexts[i]->stop();
+        }
+
+        // stop worker farm
+        workerFarm.stop();
+    };
+
     // Start some threads:
     std::vector<std::thread> threads;
     for (int i = 1; i < nrIOThreads; i++) {
@@ -165,11 +178,11 @@ int main(int argc, char* argv[])
       threads.emplace_back([i, &stats]() { workerFarm.run(stats[i]); });
     }
     io_contexts[0]->run();   // Start accepting
-    
+
     for (size_t i = 0; i < threads.size(); ++i) {
       threads[i].join();
     }
-    
+
   }
   catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";

@@ -1,5 +1,6 @@
 #ifndef WORKER_FARM_FUTEX_H
 #define WORKER_FARM_FUTEX_H
+#include <boost/lockfree/queue.hpp>
 #include "worker_farm.h"
 
 class Futex {
@@ -84,7 +85,7 @@ class FutexWorkerFarm : public WorkerFarm {
   }
 
   // Arbitrarily many threads can call this to join the farm:
-  void run() {
+  void run(WorkerStat &stat) {
     nrThreadsInRun_++;
     while (true) {
       Work* work = getWork();
@@ -92,7 +93,11 @@ class FutexWorkerFarm : public WorkerFarm {
         delete work;
         break;
       }
+      stat.num_work++;
+      auto start = std::chrono::high_resolution_clock::now();
       work->doit();
+      auto end = std::chrono::high_resolution_clock::now();
+      stat.work_time += std::chrono::nanoseconds(end - start).count();
       delete work;
     }
     nrThreadsInRun_--;
