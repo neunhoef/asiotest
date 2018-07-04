@@ -319,11 +319,11 @@ int main(int argc, char* argv[])
 
       	auto run_start = std::chrono::high_resolution_clock::now();
 
-      	for (int i = 0; i < 5000; i++)
+      	for (int i = 0; i < 50000; i++)
       	{
       		uint64_t submit_time_acc = 0;
 
-      		for (int j = 0; j < 100; j++) {
+      		for (int j = 0; j < 10; j++) {
 	      		auto submit_start = std::chrono::high_resolution_clock::now();
 	      		CountWork* work = new CountWork([](){});
 	            workerFarm.submit(work);
@@ -336,7 +336,7 @@ int main(int argc, char* argv[])
       		} 
 
 
-            int64_t sleep_time = 20 * 100 - submit_time_acc / 1000;
+            int64_t sleep_time = 20 * 10 - submit_time_acc / 1000;
             if (sleep_time > 0) {
             	usleep(0);
             }
@@ -358,17 +358,18 @@ int main(int argc, char* argv[])
 
     	while (!stopStatReader)
     	{
-    		uint64_t queue_size;
+    		uint64_t queue_size, suspend_size;
 
 	    	// get the locks
 	    	workerFarm.FUTEX_LOCK;
 	    	workerFarm.mutex_.lock();
 	    	queue_size = workerFarm.workQueue_.size();
+	    	suspend_size = workerFarm.sleeperQueue_.size();
 	    	workerFarm.mutex_.unlock();
 	    	workerFarm.FUTEX_UNLOCK;
 
 
-	    	output << t++ << " " <<  queue_size << std::endl;
+	    	output << t++ << " " <<  queue_size << " " << suspend_size << std::endl;
 
 	    	usleep(50000);
     	}
@@ -392,12 +393,20 @@ int main(int argc, char* argv[])
     stopStatReader = true;
     statReader.join();
 
+    double totalTime = 0;
+    double totalWork = 0;
+
     // now aggregate the statistics
     for (int i = 0; i < nrThreads; i++) {
     	std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work << " work_time: " << stats[i].work_time << "ns avg. work_time: " <<
     	 	stats[i].work_time / (1000.0 * stats[i].num_work) << "ns run_time: " << stats[i].run_time <<
-    	 	"ns wait_time: " << stats[i].wait_time << "ns" << std::endl;
+    	 	"ns wait_time: " << stats[i].wait_time << "ns avg. w/s: " << (int) (1000000000.0 * stats[i].num_work / stats[i].work_time) <<  std::endl;
+    	totalWork += stats[i].num_work;
+    	totalTime += stats[i].run_time;
     }
+
+    std::cout<<"Avg. Work: "<<  totalWork / nrThreads << " Work/Sec: "<< 1000000000 * totalWork / ( totalTime / nrThreads) <<std::endl;
+
 
     for (int i = 0; i < nrIOThreads; i++) {
     	std::cout<< i << " num_submits: " << iostats[i].num_submits << " submit_time: " << iostats[i].submit_time << "ns avg. submit_time: " <<

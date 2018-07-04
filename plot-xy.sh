@@ -2,6 +2,8 @@
 
 
 gnuplot -p <<EOF
-set style line 1 lc rgb '#0060ad' lt 1 lw 2 pt 7 ps 1.5   # --- blue
-plot '$1' with linespoints ls 1
+plot "$1" using 2 title 'WorkQueue' with lines
+EOF
+gnuplot -p <<EOF
+plot "$1" using 3 title 'SuspendQueue' with lines
 EOF
