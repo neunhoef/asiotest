@@ -10,6 +10,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <csignal>
+#include <algorithm>
 
 #include <unistd.h>
 
@@ -318,17 +319,28 @@ int main(int argc, char* argv[])
 
       	auto run_start = std::chrono::high_resolution_clock::now();
 
-      	for (int i = 0; i < 50000; i++)
+      	for (int i = 0; i < 5000; i++)
       	{
-      		CountWork* work = new CountWork([](){});
-      		auto submit_start = std::chrono::high_resolution_clock::now();
-            workerFarm.submit(work);
-            stat.num_submits++;
-            auto submit_stop = std::chrono::high_resolution_clock::now();
+      		uint64_t submit_time_acc = 0;
 
-            uint64_t submit_time = std::chrono::nanoseconds(submit_stop - submit_start).count();
-            stat.submit_time += submit_time;
-            usleep(20);
+      		for (int j = 0; j < 100; j++) {
+	      		auto submit_start = std::chrono::high_resolution_clock::now();
+	      		CountWork* work = new CountWork([](){});
+	            workerFarm.submit(work);
+	            auto submit_stop = std::chrono::high_resolution_clock::now();
+
+	            stat.num_submits++;
+	            uint64_t submit_time = std::chrono::nanoseconds(submit_stop - submit_start).count();
+	            stat.submit_time += submit_time;	
+	            submit_time_acc += submit_time;
+      		} 
+
+
+            int64_t sleep_time = 20 * 100 - submit_time_acc / 1000;
+            if (sleep_time > 0) {
+            	usleep(0);
+            }
+       
       	}
 
       	auto run_end = std::chrono::high_resolution_clock::now();
@@ -362,7 +374,8 @@ int main(int argc, char* argv[])
 
     for (int i = 0; i < nrIOThreads; i++) {
     	std::cout<< i << " num_submits: " << iostats[i].num_submits << " submit_time: " << iostats[i].submit_time << "ns avg. submit_time: " <<
-    		 iostats[i].submit_time / iostats[i].num_submits << "ns run_time: " << iostats[i].run_time << "ns" << std::endl;
+    		 iostats[i].submit_time / iostats[i].num_submits << "ns run_time: " << iostats[i].run_time << "ns avg. time/submit:" << 
+    		 iostats[i].run_time / iostats[i].num_submits << "ns" << std::endl;
     }
 
     /*std::cout<<" IO="<<nrIOThreads<<" W="<<nrThreads<<" sleeps="<<aggre.num_sleeps<<" spin_count="<<aggre.spin_count<<" spin_tries="<<aggre.spin_tries
