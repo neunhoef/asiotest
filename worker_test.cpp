@@ -273,12 +273,6 @@ class CountWork : public Work {
 
 };
 
-std::function<void(int)> sigusr1_handler;
-
-void _sigusr1_handler(int signal) { 
-  sigusr1_handler(signal); 
-}
-
 struct IOStats
 {
   cacheline_pad_t pad_0;
@@ -312,12 +306,6 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nrThreads; ++i) {
       threads.emplace_back([i, &stats]() { workerFarm.run(stats[i]); });
     }
-
-    std::signal(SIGINT, _sigusr1_handler);
-    sigusr1_handler = [&](int signal) {
-        // stop worker farm
-        workerFarm.stop();
-    };
 
 
     for (int i = 0; i < nrIOThreads; ++i) {
