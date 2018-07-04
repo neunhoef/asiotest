@@ -30,11 +30,9 @@ int main(int argc, char* argv[]) {
   // This will calibrate a delay loop and return a number to which to
   // count to create a busy worker of `seconds` seconds.
   auto runner = [](int64_t n, int64_t i) -> int64_t {
-    int64_t x = 0;
-    int64_t ii = i;
+    static int64_t x = 0;
     for (int64_t j = 0; j < n; j++) {
-      x += ii*ii;
-      ii += 3;
+      x += j*j;
     }
     return x;
   };
