@@ -78,7 +78,7 @@ class FutexWorkerFarm : public WorkerFarm {
       
     auto pendingJobs = size_.value().fetch_add(1, std::memory_order_seq_cst);
     
-    // (1) - this seq-cst load ensures a total order with the seq-cst fetch-add (2) 
+    // (1) - the following seq-cst load ensures a total order with the seq-cst fetch-add (2):
     if (waiting_.load(std::memory_order_seq_cst) == nrThreadsInRun_.load(std::memory_order_relaxed) || pendingJobs >= 20)
       size_.notifyOne();
     return true;
@@ -139,7 +139,7 @@ class FutexWorkerFarm : public WorkerFarm {
       	break ;
       }
       
-      // (2) - this seq-cst fetch-add ensures a total order with the seq-cst load (1)
+      // (2) - the following seq-cst fetch-add ensures a total order with the seq-cst load (1)
       waiting_.fetch_add(1, std::memory_order_seq_cst);
       size_.wait(0);
       waiting_.fetch_add(-1, std::memory_order_relaxed);
@@ -150,3 +150,15 @@ class FutexWorkerFarm : public WorkerFarm {
 };
 
 #endif
+
+// Proof that no sleeping barber is possible:
+// We have to rule out that all workers are sleeping 
+// (waiting_ == nrThreadsInRun_) and yet the queue is non-empty.
+// The last worker can only go to sleep if size_ is actually 0, just before
+// that check (and going to sleep) it has incremented waiting_ to 
+// nrThreadsInRun_. But this increment operation (2) has memory_order_seq_cst,
+// it is therefore ordered with (1), which loads waiting_. Either (2) is
+// after (1), but then the increment of size_ has happened even earlier
+// than (1), so the thread would not have gone to sleep in the first place.
+// Or (2) is earlier than (1), but then the submit() method will notifyOne
+// on the futex.
