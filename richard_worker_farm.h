@@ -2,60 +2,7 @@
 #define RICHARD_WORKER_FARM
 #include "worker_farm.h"
 
-#ifndef SPIN_LOCK_RICHARD
-#define SPIN_LOCK_RICHARD
-inline void cpu_relax() {
-// TODO use <boost/fiber/detail/cpu_relax.hpp> when available (>1.65.0?)
-#if defined(__i386) || defined(_M_IX86) || defined(__x86_64__) || \
-    defined(_M_X64)
-#if defined _WIN32
-  YieldProcessor();
-#else
-  asm volatile("pause" ::: "memory");
-#endif
-#else
-  static constexpr std::chrono::microseconds us0{0};
-  std::this_thread::sleep_for(us0);
-#endif
-}
-
-#if 1
-#define FUTEX_LOCK f_mutex_.get()
-#define FUTEX_UNLOCK f_mutex_.release()
-#else
-#define FUTEX_LOCK f_mutex_2.lock()
-#define FUTEX_UNLOCK f_mutex_2.unlock()
-#endif
-
-class spin_lock {
-    std::atomic<int> lock;
-
-public:
-    spin_lock() : lock(0) {}
-
-    uint64_t get()
-    {
-        uint64_t spins = 0;
-
-        while (!try_lock()) {
-          cpu_relax();  
-          spins++;
-        }
-
-        return spins;
-    }
-
-    void release() {
-        lock.store(0);
-    }
-
-    bool try_lock() {
-        int v = lock.exchange(1);
-
-        return v == 0;
-    }    
-};
-#endif
+#include "spin_lock.hpp"
 
 class RichardWorkerFarm : public WorkerFarm {
 
@@ -81,7 +28,7 @@ public:
   size_t maxQueueLen_;
 
  public:
-  RichardWorkerFarm(size_t maxQueueLen) 
+  RichardWorkerFarm(size_t maxQueueLen)
     : nrThreadsInRun_(0), nrThreadsAwake_(0), num_sleeps(0), shouldStop_(false), stopIfFinish_(false), tick(0), maxQueueLen_(maxQueueLen) {
   }
 
@@ -93,7 +40,7 @@ public:
 
   bool submit(Work* work) {
     // Returns true if successfully submitted and false if rejected
-    
+
     FUTEX_LOCK;
 
     if (workQueue_.size() >= maxQueueLen_) {
