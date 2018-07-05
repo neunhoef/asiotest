@@ -1,4 +1,4 @@
-all: asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 server3 server4 calibrate worker_test server3_lf
+all: asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 server3 server4 calibrate worker_test server3_lf eponeshots
 
 CPPFLAGS = -Wall -O3 -g -march=native
 #CPPFLAGS = -Wall -O0 -g
@@ -36,6 +36,9 @@ client2: client2.cpp Makefile
 client3: client3.cpp Makefile
 	g++ ${CPPFLAGS} -o client3 client3.cpp -std=c++11 -lpthread -I asio/asio/include
 
+eponeshots: epoll_oneshot_server.c Makefile
+	gcc -O3 -march=native -o eponshots epoll_oneshot_server.c -lpthread
+
 asio_server_varlen: asio_server_varlen.cpp Makefile
 	g++ ${CPPFLAGS} -o asio_server_varlen asio_server_varlen.cpp -std=c++11 -lpthread -I asio/asio/include
 
@@ -49,4 +52,4 @@ getasio:
 	git clone https://github.com/chriskohlhoff/asio
 
 clean:
-	rm -rf asio_client asio_server asio_server_varlen asio_client_varlen client server client2 server2 server3 server4 calibrate
+	rm -rf asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 server3 server4 calibrate worker_test server3_lf eponeshots

@@ -20,31 +20,36 @@ std::string prettyTime(uint64_t nanoseconds) {
 }
 
 void do_work(asio::io_context* io_context, std::string hostname, std::string port, size_t tries, uint64_t* times) {
-  tcp::socket s(*io_context);
-  tcp::resolver resolver(*io_context);
-  asio::connect(s, resolver.resolve(hostname.c_str(), port.c_str()));
+  try {
+    tcp::socket s(*io_context);
+    tcp::resolver resolver(*io_context);
+    asio::connect(s, resolver.resolve(hostname.c_str(), port.c_str()));
 
-  uint32_t size = MSG_SIZE;
-  char request[MSG_SIZE + 4];
-  memcpy(request, &size, 4);    // set length
-  for (size_t i = 0; i < MSG_SIZE-1; ++i) {
-    request[i+4] = 'x';
-  }
-  request[MSG_SIZE-1] = 0;
-
-  std::chrono::high_resolution_clock clock;
-  for (uint64_t j = 0; j < tries; ++j) {
-    auto startTime = clock.now();
-    asio::write(s, asio::buffer(request, MSG_SIZE + 4));
-
-    char reply[MSG_SIZE + 4];
-    size_t reply_length = 0;
-    while (reply_length < MSG_SIZE + 4) {
-      reply_length += asio::read(s,asio::buffer(reply, MSG_SIZE + 4 - reply_length));
+    uint32_t size = MSG_SIZE;
+    char request[MSG_SIZE + 4];
+    memcpy(request, &size, 4);    // set length
+    for (size_t i = 0; i < MSG_SIZE-1; ++i) {
+      request[i+4] = 'x';
     }
-    auto endTime = clock.now();
-    times[j] = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime - startTime).count();
+    request[MSG_SIZE-1] = 0;
+
+    std::chrono::high_resolution_clock clock;
+    for (uint64_t j = 0; j < tries; ++j) {
+      auto startTime = clock.now();
+      asio::write(s, asio::buffer(request, MSG_SIZE + 4));
+
+      char reply[MSG_SIZE + 4];
+      size_t reply_length = 0;
+      while (reply_length < MSG_SIZE + 4) {
+        reply_length += asio::read(s,asio::buffer(reply, MSG_SIZE + 4 - reply_length));
+      }
+      auto endTime = clock.now();
+      times[j] = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime - startTime).count();
+    }
+  } catch (std::exception& e) {
+    std::cerr << "Exception: " << e.what() << "\n";
   }
+
 }
 
 void print_stats(std::vector<uint64_t> times) {
