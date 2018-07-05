@@ -8,8 +8,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <signal.h>
 
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
+
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
@@ -195,11 +198,11 @@ void *thread_routine (void *user)
     // copy context, epfd and serverfd wont change anymore
     struct context context = *(struct context*) user;
 
-    struct epoll_event events[64], *event;
+    struct epoll_event events[2], *event;
 
     while (true)
     {
-        int num_events = epoll_wait(context.epfd, events, 64, -1);
+        int num_events = epoll_wait(context.epfd, events, sizeof(events)/sizeof(struct epoll_event), -1);
 
         if (num_events < 0)
         {
@@ -215,6 +218,11 @@ void *thread_routine (void *user)
                 // this is the server socket
                 accept_client (&context);
             }
+            else if (event->data.u64 == (uint64_t) -1)
+            {
+                // stop event triggered
+                return NULL;
+            }
             else
             {
                 // this is a client socket
@@ -224,6 +232,33 @@ void *thread_routine (void *user)
             }
         }
     }
+
+    puts ("Thread stopped.");
+}
+
+int stop_event_fd;
+
+void signal_handler (int signal)
+{
+    uint64_t signaled = 1;
+    while (true)
+    {
+        int ret = write(stop_event_fd, &signaled, sizeof(uint64_t));
+
+        if (ret < 0)
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                continue ;
+            }
+
+            fprintf(stderr, "Error writing event fd: %s (%d)\n", strerror(errno), errno);
+        }
+
+        break;
+    }
+
+    puts("Signaled stop.");
 }
 
 void print_help ()
@@ -240,7 +275,7 @@ int main (int argc, char *argv[])
     in_port_t port = 4568;
     int num_threads = 8, opt, load = 25000;
 
-    while ((opt = getopt (argc, argv, "p:n:h")) != -1)
+    while ((opt = getopt (argc, argv, "l:p:n:h")) != -1)
     {
         //printf ("opt = %c (%x), arg = %s\n", opt, opt, optarg);
         switch (opt)
@@ -311,22 +346,31 @@ int main (int argc, char *argv[])
     }
 
 
-
+    /*
+     *  Install signal handler.
+     */
+    signal (SIGINT, &signal_handler);
 
     /*
      *  Create the epoll instance
      */
     int epollfd = epoll_create(1);
 
+    /*
+     *  Create stop event and add it to epoll.
+     */
+    stop_event_fd = eventfd(0, EFD_NONBLOCK);
+    struct epoll_event eevent;
+    eevent.events   = EPOLLIN;
+    eevent.data.u64 = (uint64_t) -1;
+    epoll_ctl (epollfd, EPOLL_CTL_ADD, stop_event_fd, &eevent);
 
     /*
      *  Add the server socket to the epoll instance.
      */
-    struct epoll_event eevent;
     eevent.events   = EPOLLIN;  // on client only
     eevent.data.ptr = NULL;
     epoll_ctl (epollfd, EPOLL_CTL_ADD, sockfd, &eevent);
-
 
     struct context context;
     context.serverfd    = sockfd;
@@ -346,6 +390,8 @@ int main (int argc, char *argv[])
      */
 
     pthread_t threads[num_threads];
+
+    printf ("Starting %d threads.\n", num_threads);
 
     for (int i = 0; i < num_threads; i++)
     {
