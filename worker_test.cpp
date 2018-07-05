@@ -126,19 +126,19 @@ int main(int argc, char* argv[])
       threads[i].join();
     }
 
-    //double totalTime = 0;
-    //double totalWork = 0;
+    double totalTime = 0;
+    double totalWork = 0;
 
     // now aggregate the statistics
     for (int i = 0; i < nrThreads; i++) {
     	std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work << " work_time: " << stats[i].work_time << "ns avg. work_time: " <<
     	 	stats[i].work_time / (1000.0 * stats[i].num_work) << "ns avg. w/s: "
         << (int) (1000000000.0 * stats[i].num_work / stats[i].work_time) <<  std::endl;
-    	//totalWork += stats[i].num_work;
-    	//totalTime += stats[i].run_time;
+      totalTime += stats[i].work_time;
+      totalWork += stats[i].num_work;
     }
 
-    //std::cout<<"Avg. Work: "<<  totalWork / nrThreads << " Work/Sec: "<< 1000000000 * totalWork / ( totalTime / nrThreads) <<std::endl;
+    std::cout<<"Avg. Work: "<<  totalWork / nrThreads << " Work/Sec: "<< 1000000000 * totalWork / ( totalTime / nrThreads) <<std::endl;
 
 
     for (int i = 0; i < nrIOThreads; i++) {

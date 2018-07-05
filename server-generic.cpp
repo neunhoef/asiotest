@@ -135,6 +135,12 @@ class server {
   std::vector<std::shared_ptr<std::atomic<uint32_t>>> counts_;
 };
 
+std::function<void(int)> sigusr1_handler;
+
+void _sigusr1_handler(int signal) {
+  sigusr1_handler(signal);
+}
+
 int main(int argc, char* argv[])
 {
   try {
@@ -177,10 +183,15 @@ int main(int argc, char* argv[])
 
     server s(io_contexts, port);
 
-    for (int i = 0; i < 10000; ++i) {
-      CountWork* work = new CountWork([](){}, globalDelay);
-      workerFarm->submit(work);
-    }
+    std::signal(SIGINT, _sigusr1_handler);
+    sigusr1_handler = [&](int signal) {
+        // Stop all io contexts
+        for (int i = 0; i < nrIOThreads; i++) {
+          io_contexts[i]->stop();
+        }
+
+        std::cout<<"Signaled stop."<<std::endl;
+    };
 
     // Start some threads:
     std::vector<std::thread> threads;
@@ -192,11 +203,38 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nrThreads; ++i) {
       threads.emplace_back([i, &stats]() { workerFarm->run(stats[i]); });
     }
+
+    std::cout<<"Server up."<<std::endl;
     io_contexts[0]->run();   // Start accepting
 
-    for (size_t i = 0; i < threads.size(); ++i) {
+    // wait for the IO threads to finish their job
+    for (int i = 0; i < nrIOThreads-1; ++i) {
       threads[i].join();
     }
+
+    std::cout<<"IO Threads done. Wait for farm."<<std::endl;
+    workerFarm->stopWhenDone();
+
+    // now wait for the worker threads to end
+    for (size_t i = nrIOThreads; i < threads.size(); ++i) {
+      threads[i].join();
+    }
+
+    double totalTime = 0;
+    double totalWork = 0;
+
+    // Print worker statistics
+    for (int i = 0; i < nrThreads; i++) {
+      std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work << " work_time: " << stats[i].work_time << "ns avg. work_time: " <<
+        stats[i].work_time / (1000.0 * stats[i].num_work) << "ns avg. w/s: "
+        << (int) (1000000000.0 * stats[i].num_work / stats[i].work_time) <<  std::endl;
+      totalTime += stats[i].work_time;
+      totalWork += stats[i].num_work;
+    }
+
+    std::cout<<"Avg. Work: "<<  totalWork / nrThreads << " Work/Sec: "<< 1000000000 * totalWork / ( totalTime / nrThreads) <<std::endl;
+
+    delete workerFarm;
 
   }
   catch (std::exception& e) {
