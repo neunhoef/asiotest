@@ -126,7 +126,8 @@ class CountWork : public Work {
 class Connection : public std::enable_shared_from_this<Connection> {
 public:
   Connection(tcp::socket socket, std::shared_ptr<std::atomic<uint32_t>> counter)
-    : socket_(std::move(socket)), dataRead(0), counter_(counter) {
+    : socket_(std::move(socket)), context_(socket_.get_io_context()),
+      dataRead(0), counter_(counter) {
   }
 
   static size_t const BUF_SIZE = 4096;
@@ -139,47 +140,59 @@ public:
  private:
   void do_read() {
     auto self(shared_from_this());
-    socket_.async_read_some(asio::buffer(data_ + dataRead, BUF_SIZE - dataRead),
-        [this, self](std::error_code ec, std::size_t length) {
-          if (!ec) {
-            dataRead += length;
-            if (dataRead < 4) {
-              do_read();
-            } else {
-              uint32_t len;
-              memcpy(&len, data_, 4);
-              if (dataRead < 4 + len) {
+    context_.post([this, self]() {
+      auto self2(shared_from_this());
+      socket_.async_read_some(asio::buffer(data_ + dataRead, BUF_SIZE - dataRead),
+          [this, self](std::error_code ec, std::size_t length) {
+            if (!ec) {
+              dataRead += length;
+              if (dataRead < 4) {
                 do_read();
               } else {
-                // Actually work:
-                auto self(shared_from_this());
-                CountWork* work
-                  = new CountWork([this, self]() { this->do_write(); });
-                workerFarm.submit(work);
+                uint32_t len;
+                memcpy(&len, data_, 4);
+                if (dataRead < 4 + len) {
+                  do_read();
+                } else {
+                  // Actually work:
+                  auto self(shared_from_this());
+                  CountWork* work
+                    = new CountWork([this, self]() { this->do_write(); });
+                  workerFarm.submit(work);
+                }
               }
+            } else {
+              //std::cerr << "Connection closed." << std::endl;
+              (*counter_)--;
             }
-          } else {
-            //std::cerr << "Connection closed." << std::endl;
-            (*counter_)--;
-          }
-        });
+          });
+    });
   }
 
   void do_write() {
+    // Note that this is typically called by a thread that is not in a
+    // run() method of this io_context. Therefore, to make sure that this
+    // all works with SSL later, we have to make sure that the async_write
+    // is actually executed on the thread that is run()ing in the io_context!
     auto self(shared_from_this());
-    asio::async_write(socket_, asio::buffer(data_, dataRead),
-        [this, self](std::error_code ec, std::size_t length) {
-          if (!ec) {
-            dataRead = 0;
-            do_read();
-          } else {
-            std::cerr << "Error in write, bailing out!" << std::endl;
-            (*counter_)--;
-          }
-        });
+    context_.post(
+      [this, self]() {
+        auto self2(shared_from_this());
+        asio::async_write(socket_, asio::buffer(data_, dataRead),
+          [this, self2](std::error_code ec, std::size_t length) {
+            if (!ec) {
+              dataRead = 0;
+              do_read();
+            } else {
+              std::cerr << "Error in write, bailing out!" << std::endl;
+              (*counter_)--;
+            }
+          });
+      });
   }
 
   tcp::socket socket_;
+  asio::io_context& context_;
   char data_[BUF_SIZE];
   size_t dataRead;
   std::shared_ptr<std::atomic<uint32_t>> counter_;
