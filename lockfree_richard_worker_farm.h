@@ -138,7 +138,6 @@ public:
       stat.num_work++;
       auto start = std::chrono::high_resolution_clock::now();
       work->doit();
-
       auto end = std::chrono::high_resolution_clock::now();
       stat.work_time += std::chrono::nanoseconds(end - start).count();
     }

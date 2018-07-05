@@ -127,7 +127,6 @@ void read_client (struct context *context, struct client_connection *client)
 
         if (ret < 0)
         {
-
             if (errno == EAGAIN || errno == EWOULDBLOCK)
             {
                 break ;
