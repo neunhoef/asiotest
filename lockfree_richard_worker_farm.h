@@ -35,16 +35,11 @@ class spin_lock {
 public:
     spin_lock() : lock(0) {}
 
-    uint64_t get()
+    void get()
     {
-        uint64_t spins = 0;
-
         while (!try_lock()) {
-          cpu_relax();  
-          spins++;
+          cpu_relax();
         }
-
-        return spins;
     }
 
     void release() {
@@ -55,7 +50,7 @@ public:
         int v = lock.exchange(1);
 
         return v == 0;
-    }    
+    }
 };
 #endif
 
@@ -86,7 +81,7 @@ public:
   size_t maxQueueLen_;
 
  public:
-  LockfreeRichardWorkerFarm(size_t maxQueueLen) 
+  LockfreeRichardWorkerFarm(size_t maxQueueLen)
     : workQueue_(maxQueueLen), nrThreadsInRun_(0), nrThreadsAwake_(0), num_sleeps(0), shouldStop_(false), stopIfFinish_(false), tick(0), maxQueueLen_(maxQueueLen) {
   }
 
@@ -98,7 +93,7 @@ public:
 
   bool submit(Work* work) {
     // Returns true if successfully submitted and false if rejected
-    
+
     FUTEX_LOCK;
 
     // Not directly implemented in lockfree queue -- ignore for testing.
@@ -143,7 +138,7 @@ public:
       stat.num_work++;
       auto start = std::chrono::high_resolution_clock::now();
       work->doit();
-      
+
       auto end = std::chrono::high_resolution_clock::now();
       stat.work_time += std::chrono::nanoseconds(end - start).count();
     }
@@ -192,7 +187,7 @@ public:
         FUTEX_UNLOCK;
         return std::unique_ptr<Work>(work);
       }
-      
+
 
       if (stopIfFinish_) {
       	FUTEX_UNLOCK;

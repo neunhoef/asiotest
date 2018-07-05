@@ -70,6 +70,9 @@ void do_work (struct context *context, struct client_connection *client)
         }
     }
 
+    // use that value, dont optimize out
+    client->msg[5] = x;
+
     write_client(context, client);
 }
 
@@ -223,6 +226,13 @@ void *thread_routine (void *user)
     }
 }
 
+void print_help ()
+{
+    puts ("Options (Defaults)");
+    puts ("-p Port (4568)");
+    puts ("-n Number of threads (8)");
+    puts ("-l Load (25000)");
+}
 
 int main (int argc, char *argv[])
 {
@@ -230,7 +240,7 @@ int main (int argc, char *argv[])
     in_port_t port = 4568;
     int num_threads = 8, opt, load = 25000;
 
-    while ((opt = getopt (argc, argv, "p:n:")) != -1)
+    while ((opt = getopt (argc, argv, "p:n:h")) != -1)
     {
         //printf ("opt = %c (%x), arg = %s\n", opt, opt, optarg);
         switch (opt)
@@ -247,9 +257,13 @@ int main (int argc, char *argv[])
                 load = atoi(optarg);
                 break ;
 
+            case 'h':
+                print_help();
+                return EXIT_SUCCESS;
             case '?':
             default:
                 fprintf (stderr, "Bad parameters.\n");
+                print_help();
                 return EXIT_FAILURE;
         }
     }
@@ -346,4 +360,6 @@ int main (int argc, char *argv[])
     }
 
     puts ("Exit main thread");
+
+    return EXIT_SUCCESS;
 }

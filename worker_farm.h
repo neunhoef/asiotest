@@ -8,7 +8,7 @@ struct WorkerStat {
   cacheline_pad_t pad_0;
 
   uint64_t num_sleeps;
-  
+
   uint64_t work_time;
   uint64_t num_work;
 
@@ -34,6 +34,8 @@ public:
 	virtual void run(WorkerStat &stat) = 0;
 };
 
+static uint64_t result;
+
 class CountWork : public Work {
 
   uint64_t dummy_, delay_;
@@ -44,7 +46,7 @@ class CountWork : public Work {
   }
 
   void doit() override final {
-    delayRunner(delay_);
+    result = delayRunner(delay_);
     completion_();
   }
 

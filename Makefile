@@ -1,4 +1,5 @@
-all: asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 server3 server4 calibrate worker_test server3_lf eponeshots
+all: asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 \
+	server3 server4 calibrate worker_test server3-lf eponeshots server-generic
 
 CPPFLAGS = -Wall -O3 -g -march=native
 #CPPFLAGS = -Wall -O0 -g
@@ -24,10 +25,10 @@ server3: server3.cpp Makefile worker_farm.h richard_worker_farm.h
 server4: server4.cpp Makefile worker_farm.h futex_worker_farm.h
 	g++ ${CPPFLAGS} -o server4 server4.cpp -std=c++11 -lpthread -I asio/asio/include
 
-server3_lf: server3-lf.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h
+server3-lf: server3-lf.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h
 	g++ ${CPPFLAGS} -o server3-lf server3-lf.cpp -std=c++11 -lpthread -I asio/asio/include
 
-worker_test: worker_test.cpp Makefile worker_farm.h
+worker_test: worker_test.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h
 	g++ ${CPPFLAGS} -o worker_test worker_test.cpp -std=c++11 -lpthread
 
 client2: client2.cpp Makefile
@@ -36,8 +37,11 @@ client2: client2.cpp Makefile
 client3: client3.cpp Makefile
 	g++ ${CPPFLAGS} -o client3 client3.cpp -std=c++11 -lpthread -I asio/asio/include
 
+server-generic: server-generic.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h
+	g++ ${CPPFLAGS} -o server-generic server-generic.cpp -std=c++11 -lpthread -I asio/asio/include
+
 eponeshots: epoll_oneshot_server.c Makefile
-	gcc -O3 -march=native -o eponshots epoll_oneshot_server.c -lpthread
+	gcc -O3 -march=native -o eponeshots epoll_oneshot_server.c -lpthread
 
 asio_server_varlen: asio_server_varlen.cpp Makefile
 	g++ ${CPPFLAGS} -o asio_server_varlen asio_server_varlen.cpp -std=c++11 -lpthread -I asio/asio/include
