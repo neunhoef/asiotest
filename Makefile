@@ -1,7 +1,7 @@
 all: asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 \
 	server3 server4 calibrate worker_test server3-lf eponeshots server-generic
 
-CPPFLAGS = -Wall -O3 -g -march=native
+CPPFLAGS = -Wall -O3 -g -march=native -DASIO_DISABLE_NOEXCEPT
 #CPPFLAGS = -Wall -O0 -g
 
 asio_server: asio_server.cpp asio_client_server.h Makefile

@@ -142,6 +142,13 @@ void _sigusr1_handler(int signal) {
   sigusr1_handler(signal);
 }
 
+enum impl_enum {
+  impl_richard_lock = 1,
+  impl_futex = 2,
+  impl_richard_lock_free = 3,
+  impl_std_mutex = 4
+};
+
 int main(int argc, char* argv[])
 {
   try {
@@ -151,6 +158,7 @@ int main(int argc, char* argv[])
       return 1;
     }
 
+    int impl = std::atoi(argv[5]);
     int port = std::atoi(argv[1]);
     int nrIOThreads = std::atoi(argv[2]);
     int nrThreads = std::atoi(argv[3]);
@@ -159,20 +167,21 @@ int main(int argc, char* argv[])
       << nrThreads << " worker threads with a delay of " << globalDelay
       << std::endl;
 
-    switch (std::atoi(argv[5]))
+    switch (impl)
     {
-      case 1:
+      case impl_richard_lock:
         std::cout<<"Testing using Richards impl. (with locks)"<<std::endl;
         workerFarm = new RichardWorkerFarm(100000000);
         break ;
-      case 2:
+      case impl_futex:
         std::cout<<"Testing using Futex impl."<<std::endl;
         workerFarm = new FutexWorkerFarm(100000000);
         break ;
-      case 3:
+      case impl_richard_lock_free:
         std::cout<<"Testing using Richards impl. (lock free)"<<std::endl;
         workerFarm = new LockfreeRichardWorkerFarm(100000000);
-      case 4:
+        break ;
+      case impl_std_mutex:
       default:
         std::cout<<"Testing std. mutex worker farm"<<std::endl;
         workerFarm = new StdWorkerFarm(100000000);
@@ -238,6 +247,12 @@ int main(int argc, char* argv[])
     }
 
     std::cout<<"Avg. Work: "<<  totalWork / nrThreads << " Work/Sec: "<< 1000000000 * totalWork / ( totalTime / nrThreads) <<std::endl;
+
+    if (impl == impl_std_mutex) {
+      StdWorkerFarm *stdWorkerFarm = (StdWorkerFarm*) workerFarm;
+
+      std::cout<<"Max. Queue Length: "<<stdWorkerFarm->_queueMaxLength<<std::endl;
+    }
 
     delete workerFarm;
 

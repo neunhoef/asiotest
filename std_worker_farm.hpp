@@ -28,7 +28,9 @@ class StdWorkerFarm : public WorkerFarm
     std::condition_variable _condition;
 
 public:
-    StdWorkerFarm(size_t maxQueueLength) : _queue(maxQueueLength) {}
+    uint64_t _queueMaxLength;
+
+    StdWorkerFarm(size_t maxQueueLength) : _queue(maxQueueLength), _counter(0), _numWorker(0), _queueMaxLength(0) {}
 
     virtual bool submit(Work *work) {
 
@@ -91,8 +93,14 @@ private:
             for (int i = 0; i < maxRetries; i++) {
                 if (_queue.pop(work)) {
                     // Why is here memory order relaxed?
-                    /*uint64_t counter = */_counter.fetch_sub
+                    uint64_t counter = _counter.fetch_sub
                         (STDWD_CNT_ONE_WORK, std::memory_order_relaxed);
+
+                    if (stat.num_work & 0x3FF) {
+                        if (STDWF_CNT_QUEUE_LEN(counter) > _queueMaxLength) {
+                            _queueMaxLength = STDWF_CNT_QUEUE_LEN(counter);
+                        }
+                    }
 
                     // this is copied from futex implementation
                     /*if (STDWF_CNT_QUEUE_LEN(counter) >= 10) {
