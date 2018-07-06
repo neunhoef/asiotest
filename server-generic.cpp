@@ -17,6 +17,7 @@
 #include "futex_worker_farm.h"
 #include "richard_worker_farm.h"
 #include "lockfree_richard_worker_farm.h"
+#include "std_worker_farm.hpp"
 
 using asio::ip::tcp;
 
@@ -146,7 +147,7 @@ int main(int argc, char* argv[])
   try {
     if (argc != 6) {
       std::cerr << "Usage: server4 <port> <nriothreads> <nrthreads> <delay> <impl>\n"
-        << "Implementations: 1 - Richard, 2 - Futex (Manuel), 3 - Lockfree Richard\n";
+        << "Implementations: 1 - Richard, 2 - Futex (Manuel), 3 - Lockfree Richard, 4 - Std Lockfree\n";
       return 1;
     }
 
@@ -169,9 +170,13 @@ int main(int argc, char* argv[])
         workerFarm = new FutexWorkerFarm(100000000);
         break ;
       case 3:
-      default:
         std::cout<<"Testing using Richards impl. (lock free)"<<std::endl;
         workerFarm = new LockfreeRichardWorkerFarm(100000000);
+      case 4:
+      default:
+        std::cout<<"Testing std. mutex worker farm"<<std::endl;
+        workerFarm = new StdWorkerFarm(100000000);
+        break ;
     }
 
     std::vector<std::unique_ptr<asio::io_context>> io_contexts;
@@ -208,15 +213,15 @@ int main(int argc, char* argv[])
     io_contexts[0]->run();   // Start accepting
 
     // wait for the IO threads to finish their job
-    for (int i = 0; i < nrIOThreads-1; ++i) {
+    for (int i = 0; i < nrIOThreads - 1; ++i) {
       threads[i].join();
     }
 
     std::cout<<"IO Threads done. Wait for farm."<<std::endl;
-    workerFarm->stopWhenDone();
+    workerFarm->stop();
 
     // now wait for the worker threads to end
-    for (size_t i = nrIOThreads; i < threads.size(); ++i) {
+    for (size_t i = nrIOThreads - 1; i < threads.size(); ++i) {
       threads[i].join();
     }
 

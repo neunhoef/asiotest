@@ -20,6 +20,7 @@
 #include "richard_worker_farm.h"
 #include "futex_worker_farm.h"
 #include "lockfree_richard_worker_farm.h"
+#include "std_worker_farm.hpp"
 
 std::string prettyTime(uint64_t nanoseconds) {
   if (nanoseconds < 10000) {
@@ -55,7 +56,7 @@ int main(int argc, char* argv[])
 
     if (argc != 5) {
       std::cerr << "Usage: worker_test <nriothreads> <nrthreads> <workerdelay> <impl>\n"
-        << "Implementations: 1 - Richard, 2 - Futex (Manuel), 3 - Lockfree Richard\n";
+        << "Implementations: 1 - Richard, 2 - Futex (Manuel), 3 - Lockfree Richard, 4 - Std Lockfree\n";
       return 1;
     }
 
@@ -76,9 +77,14 @@ int main(int argc, char* argv[])
         workerFarm = new FutexWorkerFarm(100000000);
         break ;
       case 3:
-      default:
         std::cout<<"Testing using Richards impl. (lock free)"<<std::endl;
         workerFarm = new LockfreeRichardWorkerFarm(100000000);
+        break ;
+      case 4:
+      default:
+        std::cout<<"Testing std. mutex worker farm"<<std::endl;
+        workerFarm = new StdWorkerFarm(100000000);
+        break ;
     }
 
     std::vector<std::thread> threads;

@@ -28,7 +28,8 @@ server4: server4.cpp Makefile worker_farm.h futex_worker_farm.h
 server3-lf: server3-lf.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h
 	g++ ${CPPFLAGS} -o server3-lf server3-lf.cpp -std=c++11 -lpthread -I asio/asio/include
 
-worker_test: worker_test.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h
+worker_test: worker_test.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h \
+	std_worker_farm.hpp
 	g++ ${CPPFLAGS} -o worker_test worker_test.cpp -std=c++11 -lpthread
 
 client2: client2.cpp Makefile
