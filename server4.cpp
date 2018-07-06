@@ -153,7 +153,7 @@ int main(int argc, char* argv[])
       CountWork* work = new CountWork([](){}, globalDelay);
       workerFarm.submit(work);
     }
-    
+
     // Start some threads:
     std::vector<std::thread> threads;
     for (int i = 1; i < nrIOThreads; i++) {
@@ -165,11 +165,11 @@ int main(int argc, char* argv[])
       threads.emplace_back([i, &stats]() { workerFarm.run(stats[i]); });
     }
     io_contexts[0]->run();   // Start accepting
-    
+
     for (size_t i = 0; i < threads.size(); ++i) {
       threads[i].join();
     }
-    
+
   }
   catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";
