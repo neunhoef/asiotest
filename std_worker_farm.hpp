@@ -7,7 +7,7 @@
 
 
 #define STDWF_CNT_SLEEPING(x)   ((x) & 0xFFFFFFFF)
-#define STDWF_CNT_QUEUE_LEN(x)  ((x) >> 32)
+#define STDWF_CNT_QUEUE_LEN(x)  ((int32_t) ((x) >> 32))
 
 #define STDWD_CNT_ONE_WORK      (((uint64_t)1) << 32)
 #define STDWD_CNT_ONE_SLEEPER   (1)
@@ -28,7 +28,7 @@ class StdWorkerFarm : public WorkerFarm
     std::condition_variable _condition;
 
 public:
-    uint64_t _queueMaxLength;
+    int64_t _queueMaxLength;
 
     StdWorkerFarm(size_t maxQueueLength) : _queue(maxQueueLength), _counter(0), _numWorker(0), _queueMaxLength(0) {}
 
