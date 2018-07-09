@@ -223,12 +223,12 @@ int main(int argc, char* argv[])
     // Start some threads:
     std::vector<std::thread> threads;
     for (int i = 1; i < nrIOThreads; i++) {
-      threads.emplace_back([&io_contexts, i]() { io_contexts[i]->run(); });
+      threads.emplace_back([&io_contexts, i]() { pthread_setname_np(pthread_self(), "server-io"); io_contexts[i]->run(); });
     }
 
     std::vector<WorkerStat> stats(nrThreads);
     for (int i = 0; i < nrThreads; ++i) {
-      threads.emplace_back([i, &stats]() { workerFarm->run(stats[i]); });
+      threads.emplace_back([i, &stats]() { pthread_setname_np(pthread_self(), "server-worker"); workerFarm->run(stats[i]); });
     }
 
     std::cout<<"Server up."<<std::endl;
