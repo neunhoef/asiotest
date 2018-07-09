@@ -184,20 +184,20 @@ int main(int argc, char* argv[])
     {
       case impl_richard_lock:
         std::cout<<"Testing using Richards impl. (with locks)"<<std::endl;
-        workerFarm = new RichardWorkerFarm(100000000);
+        workerFarm = new RichardWorkerFarm(100000);
         break ;
       case impl_futex:
         std::cout<<"Testing using Futex impl."<<std::endl;
-        workerFarm = new FutexWorkerFarm(100000000);
+        workerFarm = new FutexWorkerFarm(100000);
         break ;
       case impl_richard_lock_free:
         std::cout<<"Testing using Richards impl. (lock free)"<<std::endl;
-        workerFarm = new LockfreeRichardWorkerFarm(100000000);
+        workerFarm = new LockfreeRichardWorkerFarm(100000);
         break ;
       case impl_std_mutex:
       default:
         std::cout<<"Testing std. mutex worker farm"<<std::endl;
-        workerFarm = new StdWorkerFarm(100000000);
+        workerFarm = new StdWorkerFarm(10000);
         break ;
     }
 
