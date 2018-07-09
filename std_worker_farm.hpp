@@ -129,7 +129,7 @@ private:
                 _condition.wait(guard);
             }
 
-            _counter.fetch_add (STDWD_CNT_ONE_SLEEPER, std::memory_order_relaxed);
+            _counter.fetch_sub (STDWD_CNT_ONE_SLEEPER, std::memory_order_relaxed);
         }
 
         return nullptr;
