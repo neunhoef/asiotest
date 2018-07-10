@@ -64,4 +64,4 @@ getasio:
 	git clone https://github.com/chriskohlhoff/asio
 
 clean:
-	rm -rf asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 server3 server4 calibrate worker_test server3_lf eponeshots
+	rm -rf asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 server3 server4 calibrate worker_test server3_lf eponeshots server-generic2

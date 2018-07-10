@@ -24,6 +24,8 @@ using asio::ip::tcp;
 
 WorkerFarm *workerFarm;
 
+uint64_t globalDelay = 0;
+
 
 class AdvancedWork : public Work
 {
@@ -48,14 +50,26 @@ public:
       // create response
       uint8_t *response = new uint8_t[request_size + sizeof(uint32_t)];
 
+      uint64_t delay = delayRunner(globalDelay);
+
       uint32_t request_size_32 = request_size;
       memcpy (response, &request_size_32, sizeof(uint32_t));
+      memcpy (response + sizeof(uint32_t), &delay, sizeof(uint64_t));
       memcpy (response + sizeof(uint32_t), request_buffer.get() + request_offset, request_size);
 
       std::shared_ptr<uint8_t[]> shared(response);
 
       completion_(shared, request_size + sizeof(uint32_t));
     }
+
+  private:
+  uint64_t delayRunner(uint64_t delay) {
+    uint64_t dummy_ = 0;
+    for (uint64_t i = 0; i < delay; ++i) {
+      dummy_ += i * i;
+    }
+    return dummy_;
+  }
 };
 
 class Connection : public std::enable_shared_from_this<Connection>
@@ -284,7 +298,7 @@ int main(int argc, char* argv[])
     int port = std::atoi(argv[1]);
     int nrIOThreads = std::atoi(argv[2]);
     int nrThreads = std::atoi(argv[3]);
-    //globalDelay = std::atol(argv[4]);
+    globalDelay = std::atol(argv[4]);
     std::cout << "Hello, using " << nrIOThreads << " IOthreads and "
       << nrThreads << " worker threads with a delay of " //<< globalDelay
       << std::endl;

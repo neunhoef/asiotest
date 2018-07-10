@@ -41,7 +41,7 @@ public:
             (STDWD_CNT_ONE_WORK, std::memory_order_seq_cst);
 
         if (STDWF_CNT_SLEEPING(counter) > 0) {
-            std::lock_guard<std::mutex> guard(_mutex);
+            //std::lock_guard<std::mutex> guard(_mutex);
             _condition.notify_one();
         }
 
@@ -111,7 +111,7 @@ private:
                 }
 
                 if (i < maxRetries - 1) {
-                    std::this_thread::yield();
+                    cpu_relax(); //std::this_thread::yield();
                 }
             }
 
