@@ -122,10 +122,12 @@ private:
             }
 
             std::unique_lock<std::mutex> guard(_mutex);
+
             uint64_t counter = _counter.fetch_add
                 (STDWD_CNT_ONE_SLEEPER, std::memory_order_seq_cst);
 
             if (STDWF_CNT_QUEUE_LEN(counter) == 0) {
+                stat.num_sleeps++;
                 _condition.wait(guard);
             }
 

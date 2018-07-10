@@ -307,20 +307,20 @@ int main(int argc, char* argv[])
     {
       case impl_richard_lock:
         std::cout<<"Testing using Richards impl. (with locks)"<<std::endl;
-        workerFarm = new RichardWorkerFarm(100000000);
+        workerFarm = new RichardWorkerFarm(100000);
         break ;
       case impl_futex:
         std::cout<<"Testing using Futex impl."<<std::endl;
-        workerFarm = new FutexWorkerFarm(100000000);
+        workerFarm = new FutexWorkerFarm(100000);
         break ;
       case impl_richard_lock_free:
         std::cout<<"Testing using Richards impl. (lock free)"<<std::endl;
-        workerFarm = new LockfreeRichardWorkerFarm(100000000);
+        workerFarm = new LockfreeRichardWorkerFarm(100000);
         break ;
       case impl_std_mutex:
       default:
         std::cout<<"Testing std. mutex worker farm"<<std::endl;
-        workerFarm = new StdWorkerFarm(100000000);
+        workerFarm = new StdWorkerFarm(10000);
         break ;
     }
 
@@ -375,7 +375,8 @@ int main(int argc, char* argv[])
 
     // Print worker statistics
     for (int i = 0; i < nrThreads; i++) {
-      std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work << " work_time: " << stats[i].work_time << "ns avg. work_time: " <<
+      std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work << " w/s: " << stats[i].num_work / stats[i].num_sleeps
+        << " avg. work_time: " <<
         stats[i].work_time / (1000.0 * stats[i].num_work) << "ns avg. w/s: "
         << (int) (1000000000.0 * stats[i].num_work / stats[i].work_time) <<  std::endl;
       totalTime += stats[i].work_time;
