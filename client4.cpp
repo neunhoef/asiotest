@@ -86,6 +86,7 @@ public:
 
   void do_read()
   {
+
     auto self(shared_from_this());
 
     auto buffer = asio::buffer(
@@ -125,7 +126,7 @@ public:
 
             ctx.times[msg_id] = get_tick_count_ns() - ctx.times[msg_id];
 
-            if (++ctx.recevied_msgs == ctx.total_requests)
+            if (ctx.recevied_msgs.fetch_add(1) + 1 == ctx.total_requests)
             {
               std::cout<<"All messages received."<<std::endl;
               // stop all

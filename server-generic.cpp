@@ -25,6 +25,7 @@ WorkerFarm *workerFarm;
 
 uint64_t globalDelay = 1;
 
+std::vector<uint64_t> submit_times;
 
 
 class Connection : public std::enable_shared_from_this<Connection> {
@@ -59,6 +60,8 @@ public:
                 // Actually work:
                 CountWork* work = new CountWork([this, self]() { this->do_write(); }, globalDelay);
                 workerFarm->submit(work);
+                submit_times.push_back(std::chrono::high_resolution_clock::now()
+                  .time_since_epoch().count());
               }
             }
           } else {
@@ -232,6 +235,8 @@ int main(int argc, char* argv[])
     }
 
     std::cout<<"Server up."<<std::endl;
+    auto startTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+
     io_contexts[0]->run();   // Start accepting
 
     // wait for the IO threads to finish their job
@@ -269,6 +274,13 @@ int main(int argc, char* argv[])
     }
 
     delete workerFarm;
+
+    std::fstream fs("submit_times.txt", std::ios_base::out | std::ios_base::trunc);
+
+    for (auto p : submit_times)
+    {
+      fs << p - startTime <<std::endl;
+    }
 
   }
   catch (std::exception& e) {
