@@ -25,6 +25,7 @@ WorkerFarm *workerFarm;
 
 uint64_t globalDelay = 1;
 
+std::mutex mutex_;
 std::vector<uint64_t> submit_times;
 
 
@@ -60,6 +61,8 @@ public:
                 // Actually work:
                 CountWork* work = new CountWork([this, self]() { this->do_write(); }, globalDelay);
                 workerFarm->submit(work);
+
+                std::lock_guard<std::mutex> guard(mutex_);
                 submit_times.push_back(std::chrono::high_resolution_clock::now()
                   .time_since_epoch().count());
               }
