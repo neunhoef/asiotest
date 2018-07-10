@@ -280,9 +280,11 @@ int main(int argc, char* argv[])
 
     std::fstream fs("submit_times.txt", std::ios_base::out | std::ios_base::trunc);
 
-    for (auto p : submit_times)
+    std::sort(submit_times.begin(), submit_times.end());
+
+    for (size_t i = 1; i < submit_times.size(); i++)
     {
-      fs << p - startTime <<std::endl;
+      fs << submit_times[i] - startTime << " " << submit_times[i] - submit_times[i-1] <<std::endl;
     }
 
   }
