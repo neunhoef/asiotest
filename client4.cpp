@@ -61,6 +61,11 @@ class Connection : public std::enable_shared_from_this<Connection>
 public:
   Connection(ClientContext &ctx, int i) : ctx(ctx), socket_(*ctx.io_contexts[i % ctx.io_contexts.size()]) {
     asio::connect(socket_, ctx.resolved);
+
+    recv_buffer.reset(new uint8_t[2048]);
+    recv_buffer_size            = 2048;
+    recv_buffer_write_offset    = 0;
+    recv_buffer_read_offset     = 0;
   }
 
   void realloc_recv_buffer (std::size_t required_size)
@@ -126,7 +131,9 @@ public:
 
             ctx.times[msg_id] = get_tick_count_ns() - ctx.times[msg_id];
 
-            if (ctx.recevied_msgs.fetch_add(1) + 1 == ctx.total_requests)
+            uint64_t num_msgs = ctx.recevied_msgs.fetch_add(1) + 1;
+
+            if (num_msgs == ctx.total_requests)
             {
               std::cout<<"All messages received."<<std::endl;
               // stop all
@@ -201,7 +208,6 @@ void do_out_work (ClientContext &ctx, uint64_t msg_id_start, int i) {
     {
       uint64_t msg_id = msg_id_start + j;
       connection->generate_work(msg_id);
-      //std::cout<<"Sending msg "<<msg_id<<std::endl;
       usleep(ctx.req_timer_us);
     }
 
@@ -296,7 +302,7 @@ int main(int argc, char* argv[]) {
     auto startTime = std::chrono::high_resolution_clock::now();
 
     std::vector<std::thread> threads;
-    for (unsigned int i = 0; i < num_in_thrds; i++)
+    for (unsigned int i = 1; i < num_in_thrds + 1; i++)
     {
       threads.emplace_back([i, &ctx]() { ctx.io_contexts[i]->run(); });
     }
@@ -306,6 +312,8 @@ int main(int argc, char* argv[]) {
         do_out_work(ctx, i * num_req_pre_thrd, i);
       });
     }
+
+    ctx.io_contexts[0]->run();
 
     for (unsigned int i = 0; i < threads.size(); ++i) {
       threads[i].join();

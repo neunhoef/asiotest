@@ -52,9 +52,12 @@ public:
 
       uint64_t delay = delayRunner(globalDelay);
 
+      //uint64_t msg_id;
+      //memcpy(&msg_id, request_buffer.get() + request_offset, sizeof(uint64_t));
+
       uint32_t request_size_32 = request_size;
       memcpy (response, &request_size_32, sizeof(uint32_t));
-      memcpy (response + sizeof(uint32_t), &delay, sizeof(uint64_t));
+      memcpy (response + 3 * sizeof(uint32_t), &delay, sizeof(uint64_t));
       memcpy (response + sizeof(uint32_t), request_buffer.get() + request_offset, request_size);
 
       std::shared_ptr<uint8_t[]> shared(response);
