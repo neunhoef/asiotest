@@ -32,22 +32,6 @@ public:
 
     StdWorkerFarm(size_t maxQueueLength) : _queue(maxQueueLength), _counter(0), _numWorker(0), _queueMaxLength(0) {}
 
-    virtual bool submit(Work *work) {
-
-        if (!_queue.push(work))
-            return false;
-
-        uint64_t counter = _counter.fetch_add
-            (STDWD_CNT_ONE_WORK, std::memory_order_seq_cst);
-
-        if (STDWF_CNT_SLEEPING(counter) > 0) {
-            //std::lock_guard<std::mutex> guard(_mutex);
-            _condition.notify_one();
-        }
-
-        return true;
-    }
-
     virtual void stopWhenDone() {
         _stopWhenDone.store(true, std::memory_order_relaxed);
         _condition.notify_all();
@@ -81,6 +65,22 @@ public:
         _numWorker--;
     }
 
+    virtual bool submit(Work *work) {
+
+        // (1)
+        uint64_t counter = _counter.fetch_add
+            (STDWD_CNT_ONE_WORK, std::memory_order_seq_cst);
+
+        if (!_queue.push(work))
+            return false;
+
+        if (STDWF_CNT_SLEEPING(counter) > 0) {
+            std::lock_guard<std::mutex> guard(_mutex);
+            _condition.notify_one();
+        }
+
+        return true;
+    }
 private:
     Work *getWork(WorkerStat &stat) {
 
@@ -88,11 +88,11 @@ private:
 
         while (!_shouldStop.load(std::memory_order_relaxed)) {
 
-            const int maxRetries = 3;
+            const int maxRetries = 3000;
 
             for (int i = 0; i < maxRetries; i++) {
                 if (_queue.pop(work)) {
-                    // Why is here memory order relaxed?
+
                     uint64_t counter = _counter.fetch_sub
                         (STDWD_CNT_ONE_WORK, std::memory_order_relaxed);
 
@@ -102,16 +102,17 @@ private:
                         }
                     }
 
-                    // this is copied from futex implementation
-                    /*if (STDWF_CNT_QUEUE_LEN(counter) >= 10) {
-                        _condition.notify_one();
-                    }*/
-
                     return work;
                 }
 
                 if (i < maxRetries - 1) {
                     cpu_relax(); //std::this_thread::yield();
+                }
+
+                uint64_t counter = _counter.load(std::memory_order_relaxed);
+
+                if (STDWF_CNT_QUEUE_LEN(counter) > 0) {
+                    i--;
                 }
             }
 
@@ -123,12 +124,19 @@ private:
 
             std::unique_lock<std::mutex> guard(_mutex);
 
+            // (2)
             uint64_t counter = _counter.fetch_add
                 (STDWD_CNT_ONE_SLEEPER, std::memory_order_seq_cst);
 
             if (STDWF_CNT_QUEUE_LEN(counter) == 0) {
                 stat.num_sleeps++;
-                _condition.wait(guard);
+
+                if (STDWF_CNT_SLEEPING(counter) >= _numWorker.load(std::memory_order_relaxed)) {
+                    _condition.wait_for(guard, std::chrono::milliseconds(100));
+                } else {
+                    _condition.wait(guard);
+                }
+
             }
 
             _counter.fetch_sub (STDWD_CNT_ONE_SLEEPER, std::memory_order_relaxed);
