@@ -13,7 +13,12 @@
 #include <algorithm>
 #include <fstream>
 #include <boost/lockfree/queue.hpp>
+
+#include <boost/bind.hpp>
+
 #include "asio.hpp"
+#include "asio/ssl.hpp"
+
 #include "futex_worker_farm.h"
 #include "richard_worker_farm.h"
 #include "lockfree_richard_worker_farm.h"
@@ -22,6 +27,8 @@
 //#include "smart_buffer.hpp"
 
 using asio::ip::tcp;
+
+typedef asio::ssl::stream<asio::ip::tcp::socket> ssl_socket;
 
 WorkerFarm *workerFarm;
 
@@ -78,7 +85,7 @@ public:
 
 class Connection : public std::enable_shared_from_this<Connection>
 {
-  tcp::socket socket_;
+  ssl_socket socket_;
   asio::io_context& context_;
 
   std::shared_ptr<std::atomic<uint32_t>> counter_;
@@ -92,9 +99,12 @@ class Connection : public std::enable_shared_from_this<Connection>
 
 
 public:
-  Connection(tcp::socket socket, std::shared_ptr<std::atomic<uint32_t>> counter)
-    : socket_(std::move(socket)), context_(socket_.get_io_context()),
-    counter_(counter) {
+  Connection(asio::io_context& io_context, asio::ssl::context& ssl_context, std::shared_ptr<std::atomic<uint32_t>> counter)
+    :
+    socket_(io_context, ssl_context),
+    context_(io_context),
+    counter_(counter)
+    {
   }
 
   void start() {
@@ -102,9 +112,20 @@ public:
     recv_buffer_size            = 2048;
     recv_buffer_write_offset    = 0;
     recv_buffer_read_offset     = 0;
+    try {
+      socket_.handshake(asio::ssl::stream<asio::ip::tcp::socket>::server);
 
-    do_read();
+      do_read();
+    } catch (std::exception& e) {
+      std::cerr << "Exception: " << e.what() << "\n";
+    }
   }
+
+  ssl_socket::lowest_layer_type& socket()
+  {
+    return socket_.lowest_layer();
+  }
+
 
  private:
 
@@ -201,8 +222,6 @@ public:
   }
 
 
-
-
   void do_write(std::shared_ptr<uint8_t[]> response, size_t response_size) {
     // Note that this is typically called by a thread that is not in a
     // run() method of this io_context. Therefore, to make sure that this
@@ -217,6 +236,7 @@ public:
           [this, self_io](std::error_code ec, std::size_t length) {
             if (ec) {
               (*counter_)--;
+              std::cout<<"Socket write error"<<std::endl;
             }
           });
       });
@@ -232,11 +252,26 @@ class server {
          short port)
     : io_contexts_(io_contexts),
       acceptor_(*io_contexts[0], tcp::endpoint(tcp::v4(), port)),
-      socket_(*io_contexts[0]) {
+      context_(asio::ssl::context::sslv23) {
     for (size_t i = 0; i < io_contexts.size(); ++i) {
       counts_.push_back(std::make_shared<std::atomic<uint32_t>>(0));
     }
+
+    context_.set_options(
+        asio::ssl::context::default_workarounds
+        | asio::ssl::context::no_sslv2
+        | asio::ssl::context::single_dh_use);
+    context_.set_password_callback(boost::bind(&server::get_password, this));
+
+    context_.use_certificate_chain_file("cert.pem");
+    context_.use_private_key_file("key.pem", asio::ssl::context::pem);
+
     do_accept();
+  }
+
+  std::string get_password() const
+  {
+    return "test";
   }
 
  private:
@@ -251,17 +286,15 @@ class server {
         lowpos = i;
       }
     }
-    tcp::socket newSocket(*io_contexts_[lowpos]);
-    socket_ = std::move(newSocket);
+
+    auto conn = std::make_shared<Connection>(*io_contexts_[lowpos], context_, this->counts_[lowpos]);
+
     acceptor_.async_accept(
-        socket_,
-        [this, lowpos](std::error_code ec) {
+        conn->socket(),
+        [this, lowpos, conn](std::error_code ec) {
           if (!ec) {
             (*this->counts_[lowpos])++;
-            //std::cout << "Accepting new connection on thread " << lowpos
-            //    << std::endl;
-            std::make_shared<Connection>(std::move(this->socket_),
-                                         this->counts_[lowpos])->start();
+            conn->start();
           }
           // And accept the next:
           do_accept();
@@ -270,8 +303,8 @@ class server {
 
   std::vector<std::unique_ptr<asio::io_context>>& io_contexts_;
   tcp::acceptor acceptor_;
-  tcp::socket socket_;
   std::vector<std::shared_ptr<std::atomic<uint32_t>>> counts_;
+  asio::ssl::context context_;
 };
 
 std::function<void(int)> sigusr1_handler;
