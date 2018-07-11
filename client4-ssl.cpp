@@ -125,6 +125,7 @@ public:
     auto _on_read = [this, self] (std::error_code ec, std::size_t bytes_read) {
 
       if (ec) {
+        std::cout<<"Client read error: "<<ec<<std::endl;
         return ;
       }
 
@@ -220,7 +221,7 @@ public:
     memcpy(request + sizeof(uint32_t), &msg_id, sizeof(uint64_t));
 
     ctx.times[msg_id] = get_tick_count_ns();
-    asio::write(socket_, asio::buffer(request, sizeof(uint32_t) + size));
+    asio::async_write(socket_, asio::buffer(request, sizeof(uint32_t) + size), [](std::error_code ec, size_t bytes_written) {});
 
     std::cout<<"send msg "<<msg_id<<" on "<<i<<std::endl;
   }
@@ -247,7 +248,7 @@ void do_out_work (ClientContext &ctx, uint64_t msg_id_start, int i) {
       usleep(ctx.req_timer_us);
     }
 
-    std::cout<<"All msgs send"<<i<<std::endl;
+    std::cout<<"All msgs send "<<i<<std::endl;
 
   } catch (std::exception& e) {
     std::cerr << "Exception ("<<msg_id_start<<"): " << e.what() << "\n";
@@ -340,7 +341,7 @@ int main(int argc, char* argv[]) {
     auto startTime = std::chrono::high_resolution_clock::now();
 
     std::vector<std::thread> threads;
-    for (unsigned int i = 1; i < num_in_thrds + 1; i++)
+    for (unsigned int i = 1; i < num_in_thrds; i++)
     {
       threads.emplace_back([i, &ctx]() { ctx.io_contexts[i]->run(); });
     }
