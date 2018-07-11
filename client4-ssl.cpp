@@ -55,7 +55,7 @@ class Connection : public std::enable_shared_from_this<Connection>
 
   ClientContext &ctx;
   asio::ssl::context ssl_context_;
-  asio::ssl::stream<asio::ip::tcp::socket> socket_;
+  /**/asio::ssl::stream</**/asio::ip::tcp::socket/**/>/**/ socket_;
 
   std::shared_ptr<uint8_t[]> recv_buffer;
   size_t recv_buffer_size;
@@ -70,7 +70,7 @@ public:
   Connection(ClientContext &ctx, int i_) :
     ctx(ctx),
     ssl_context_(asio::ssl::context::sslv23),
-    socket_(*ctx.io_contexts[i_ % ctx.io_contexts.size()], ssl_context_),
+    socket_(*ctx.io_contexts[i_ % ctx.io_contexts.size()]/**/, ssl_context_/**/),
     i(i_)
   {
     try
@@ -90,10 +90,6 @@ public:
     }
   }
 
-  ~Connection() {
-    std::cout<<"Closing connection "<<i<<std::endl;
-  }
-
   void realloc_recv_buffer (std::size_t required_size)
   {
     size_t bytes_ahead = recv_buffer_size - recv_buffer_read_offset;
@@ -104,7 +100,7 @@ public:
       size_t new_size = std::max(2048ul, required_size + 1024);
       uint8_t *new_buffer = new uint8_t[new_size];
 
-      std::cout<<"Realloc on "<<i<<std::endl;
+      //std::cout<<"Realloc on "<<i<<std::endl;
 
 
       size_t bytes_to_copy = recv_buffer_write_offset - recv_buffer_read_offset;
@@ -120,7 +116,7 @@ public:
   void do_read()
   {
 
-    std::cout<<"setup do_read on "<<i<<std::endl;
+    //std::cout<<"setup do_read on "<<i<<std::endl;
 
     auto self(shared_from_this());
 
@@ -132,10 +128,8 @@ public:
     auto _on_read = [this, self] (std::error_code ec, std::size_t bytes_read) {
 
       if (ec) {
-        std::cout<<"Client read error: "<<ec<<std::endl;
+        //std::cout<<"Client read error: "<<ec<<std::endl;
         return ;
-      } else {
-        std::cout<<"On read: "<<ec<<" bytes_read: "<<bytes_read<<std::endl;
       }
 
       recv_buffer_write_offset += bytes_read;
@@ -148,7 +142,7 @@ public:
         size_t bytes_available = recv_buffer_write_offset
           - recv_buffer_read_offset;
 
-        std::cout<<"Bytes available "<<bytes_available<<" at "<<i<<std::endl;
+        //std::cout<<"Bytes available "<<bytes_available<<" at "<<i<<std::endl;
 
         if (bytes_available > sizeof(uint32_t)) {
           // we can read the msg length
@@ -164,7 +158,7 @@ public:
             uint64_t msg_id;
             memcpy (&msg_id, recv_buffer.get() + recv_buffer_read_offset, sizeof(uint64_t));
 
-            std::cout<<"Received msg "<<msg_id<<" on "<<i<<std::endl;
+            //std::cout<<"Received msg "<<msg_id<<" on "<<i<<std::endl;
 
             ctx.times[msg_id] = get_tick_count_ns() - ctx.times[msg_id];
 
@@ -173,19 +167,17 @@ public:
 
             if (num_msgs == ctx.total_requests)
             {
-              std::cout<<"All messages received."<<std::endl;
+              //std::cout<<"All messages received."<<std::endl;
               // stop all
               for (size_t i = 0; i < ctx.io_contexts.size(); i++)
               {
                 ctx.io_contexts[i]->stop();
               }
-
-              return ;
             }
 
             if (recevied_msgs == ctx.num_req_pre_thrd)
             {
-              std::cout<<"Connection finished "<<i<<std::endl;
+              //std::cout<<"Connection finished "<<i<<std::endl;
               return ;
             }
 
@@ -193,7 +185,7 @@ public:
           } else {
             size_t realloc_size = recv_msg_size + sizeof(uint32_t);
 
-            std::cout<<"No more data (msgpayload)"<<i<<std::endl;
+            //std::cout<<"No more data (msgpayload)"<<i<<std::endl;
 
             // msg not yet received, check if enough space is available
             if (bytes_free <= realloc_size)
@@ -207,7 +199,7 @@ public:
             break ;
           }
         } else {
-          std::cout<<"No more data (msglen) "<<i<<std::endl;
+          //std::cout<<"No more data (msglen) "<<i<<std::endl;
           // next message length not received
           break ;
         }
@@ -237,12 +229,12 @@ public:
     memcpy(request + sizeof(uint32_t), &msg_id, sizeof(uint64_t));
 
     ctx.times[msg_id] = get_tick_count_ns();
-    asio::async_write(socket_, asio::buffer(request, sizeof(uint32_t) + size), [msg_id](std::error_code ec, size_t bytes_written) {
+    asio::write(socket_, asio::buffer(request, sizeof(uint32_t) + size)/*, [msg_id](std::error_code ec, size_t bytes_written) {
 
       std::cout<<"Sent msg "<<msg_id<<": "<<ec<<" bytes_written:"<<bytes_written<<std::endl;
-    });
+    }*/);
 
-    std::cout<<"send msg "<<msg_id<<" on "<<i<<std::endl;
+    //std::cout<<"send msg "<<msg_id<<" on "<<i<<std::endl;
   }
 };
 
@@ -254,7 +246,11 @@ void do_out_work (ClientContext &ctx, uint64_t msg_id_start, int i) {
      */
     auto connection = std::make_shared<Connection>(ctx, i);
 
-    connection->do_read();
+    ctx.io_contexts[i % ctx.io_contexts.size()]->post([connection]() {
+      connection->do_read();
+    });
+
+
 
     for (uint64_t j = 0; j < ctx.num_req_pre_thrd; ++j)
     {
@@ -267,7 +263,7 @@ void do_out_work (ClientContext &ctx, uint64_t msg_id_start, int i) {
       usleep(ctx.req_timer_us);
     }
 
-    std::cout<<"All msgs send "<<i<<std::endl;
+    //std::cout<<"All msgs posted "<<i<<std::endl;
 
   } catch (std::exception& e) {
     std::cerr << "Exception ("<<msg_id_start<<"): " << e.what() << "\n";

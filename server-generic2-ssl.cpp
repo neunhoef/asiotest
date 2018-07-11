@@ -28,12 +28,10 @@
 
 using asio::ip::tcp;
 
-typedef asio::ssl::stream<asio::ip::tcp::socket> ssl_socket;
-
 WorkerFarm *workerFarm;
 
 uint64_t globalDelay = 0;
-
+typedef asio::ssl::stream<asio::ip::tcp::socket> ssl_socket;
 
 class AdvancedWork : public Work
 {
@@ -62,7 +60,7 @@ public:
 
       uint64_t msg_id;
       memcpy(&msg_id, request_buffer.get() + request_offset, sizeof(uint64_t));
-      std::cout<<"Working "<<msg_id<<std::endl;
+      //std::cout<<"Working "<<msg_id<<std::endl;
 
       uint32_t request_size_32 = request_size;
       memcpy (response, &request_size_32, sizeof(uint32_t));
@@ -86,7 +84,8 @@ public:
 
 class Connection : public std::enable_shared_from_this<Connection>
 {
-  ssl_socket socket_;
+  ///*asio::ssl::stream<*/asio::ip::tcp::socket/*>*/ socket_;
+  asio::ssl::stream<asio::ip::tcp::socket> socket_;
   asio::io_context& context_;
 
   std::shared_ptr<std::atomic<uint32_t>> counter_;
@@ -104,27 +103,37 @@ class Connection : public std::enable_shared_from_this<Connection>
 public:
   Connection(int conn_id, asio::io_context& io_context, asio::ssl::context& ssl_context, std::shared_ptr<std::atomic<uint32_t>> counter)
     :
-    socket_(io_context, ssl_context),
+    socket_(io_context/**/, ssl_context/**/),
     context_(io_context),
     counter_(counter),
     conn_id(conn_id)
     {
   }
 
-  ~Connection()
+  /*~Connection()
   {
     std::cout<<conn_id<<": "<<"Closing connection"<<std::endl;
-  }
+  }*/
 
   void start() {
+
+    auto self(shared_from_this());
+
     recv_buffer.reset(new uint8_t[2048]);
     recv_buffer_size            = 2048;
     recv_buffer_write_offset    = 0;
     recv_buffer_read_offset     = 0;
     try {
-      socket_.handshake(asio::ssl::stream<asio::ip::tcp::socket>::server);
-
-      do_read();
+      /*socket_.handshake(asio::ssl::stream<asio::ip::tcp::socket>::server);*/
+      socket_.async_handshake(asio::ssl::stream<asio::ip::tcp::socket>::server,
+        [this, self](const std::error_code& ec) {
+          if (ec) {
+            std::cout<<conn_id<<": Handshake failure "<<ec<<std::endl;
+          } else {
+            //std::cout<<conn_id<<": Handshake success "<<ec<<std::endl;
+            do_read();
+          }
+        });
     } catch (std::exception& e) {
       std::cerr <<conn_id<<": "<< "Exception: " << e.what() << "\n";
     }
@@ -161,7 +170,7 @@ public:
 
   void do_read()
   {
-    std::cout<<conn_id<<": "<<"do_read setup"<<std::endl;
+    //std::cout<<conn_id<<": "<<"do_read setup"<<std::endl;
 
     auto self(shared_from_this());
 
@@ -173,10 +182,8 @@ public:
     auto _on_read = [this, self] (std::error_code ec, std::size_t bytes_read) {
 
       if (ec) {
-        std::cout<<conn_id<<": "<<"Read error "<<ec<<std::endl;
+        //std::cout<<conn_id<<": "<<"Read error "<<ec<<std::endl;
         return ;
-      } else {
-        std::cout<<conn_id<<": "<<"_on_read "<<ec<<" bytes_read: "<<bytes_read<<std::endl;
       }
 
       recv_buffer_write_offset += bytes_read;
@@ -187,7 +194,7 @@ public:
         size_t bytes_available = recv_buffer_write_offset
           - recv_buffer_read_offset;
 
-        std::cout<<conn_id<<": "<<"Bytes available: "<<bytes_available<<std::endl;
+        //std::cout<<conn_id<<": "<<"Bytes available: "<<bytes_available<<std::endl;
 
         if (bytes_available > sizeof(uint32_t)) {
           // we can read the msg length
@@ -248,7 +255,7 @@ public:
     uint64_t msg_id;
     memcpy (&msg_id, response.get() + sizeof(uint32_t), sizeof(uint64_t));
 
-    std::cout<<conn_id<<": "<<"enqueueing msg "<<msg_id<<std::endl;
+    //std::cout<<conn_id<<": "<<"enqueueing msg "<<msg_id<<std::endl;
 
     context_.post(
       [this, self, response, response_size]() {
@@ -257,8 +264,8 @@ public:
         uint64_t msg_id;
         memcpy (&msg_id, response.get() + sizeof(uint32_t), sizeof(uint64_t));
 
-        std::cout<<conn_id<<": "<<"writing msg "<<msg_id<<std::endl;
-        asio::async_write(socket_, asio::buffer(response.get(), response_size),
+        //std::cout<<conn_id<<": "<<"writing msg "<<msg_id<<std::endl;
+        asio::/*async_*/write(socket_, asio::buffer(response.get(), response_size)/*,
           [this, self_io, response](std::error_code ec, std::size_t length) {
             if (ec) {
               (*counter_)--;
@@ -269,7 +276,7 @@ public:
 
               std::cout<<conn_id<<": "<<"Sent msg "<<msg_id<<" size: "<<length<<std::endl;
             }
-          });
+          }*/);
       });
   }
 
