@@ -1,0 +1,16 @@
+Style:
+
+  - opening brace on line above
+  - no macros, const or even constexpr for constants, inline functions
+  - if always with braces
+  - indentation 2 spaces, no tabs
+
+Algorithm:
+
+  - growth of buffer must be exponential, not just adding 1024 at a time
+  - we probably want to use something that can to realloc internally
+  - mutex for submit needed!
+  - probably need to reduce work with memory_order_seq_cst
+  - maxRetries much larger to wait out AWS delays
+  - also look at work counter in the loop of getWork
+  - in wait use a timeout of 0.1s for at least one thread, just in case
