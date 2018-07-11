@@ -60,8 +60,9 @@ public:
 
       uint64_t delay = delayRunner(globalDelay);
 
-      //uint64_t msg_id;
-      //memcpy(&msg_id, request_buffer.get() + request_offset, sizeof(uint64_t));
+      uint64_t msg_id;
+      memcpy(&msg_id, request_buffer.get() + request_offset, sizeof(uint64_t));
+      std::cout<<"Working "<<msg_id<<std::endl;
 
       uint32_t request_size_32 = request_size;
       memcpy (response, &request_size_32, sizeof(uint32_t));
@@ -97,14 +98,22 @@ class Connection : public std::enable_shared_from_this<Connection>
   size_t recv_buffer_write_offset;
   size_t recv_buffer_read_offset;
 
+  int conn_id;
+
 
 public:
-  Connection(asio::io_context& io_context, asio::ssl::context& ssl_context, std::shared_ptr<std::atomic<uint32_t>> counter)
+  Connection(int conn_id, asio::io_context& io_context, asio::ssl::context& ssl_context, std::shared_ptr<std::atomic<uint32_t>> counter)
     :
     socket_(io_context, ssl_context),
     context_(io_context),
-    counter_(counter)
+    counter_(counter),
+    conn_id(conn_id)
     {
+  }
+
+  ~Connection()
+  {
+    std::cout<<conn_id<<": "<<"Closing connection"<<std::endl;
   }
 
   void start() {
@@ -117,7 +126,7 @@ public:
 
       do_read();
     } catch (std::exception& e) {
-      std::cerr << "Exception: " << e.what() << "\n";
+      std::cerr <<conn_id<<": "<< "Exception: " << e.what() << "\n";
     }
   }
 
@@ -152,6 +161,8 @@ public:
 
   void do_read()
   {
+    std::cout<<conn_id<<": "<<"do_read setup"<<std::endl;
+
     auto self(shared_from_this());
 
     auto buffer = asio::buffer(
@@ -162,7 +173,10 @@ public:
     auto _on_read = [this, self] (std::error_code ec, std::size_t bytes_read) {
 
       if (ec) {
+        std::cout<<conn_id<<": "<<"Read error "<<ec<<std::endl;
         return ;
+      } else {
+        std::cout<<conn_id<<": "<<"_on_read "<<ec<<" bytes_read: "<<bytes_read<<std::endl;
       }
 
       recv_buffer_write_offset += bytes_read;
@@ -172,6 +186,8 @@ public:
       {
         size_t bytes_available = recv_buffer_write_offset
           - recv_buffer_read_offset;
+
+        std::cout<<conn_id<<": "<<"Bytes available: "<<bytes_available<<std::endl;
 
         if (bytes_available > sizeof(uint32_t)) {
           // we can read the msg length
@@ -229,14 +245,29 @@ public:
     // is actually executed on the thread that is run()ing in the io_context!
     auto self(shared_from_this());
 
+    uint64_t msg_id;
+    memcpy (&msg_id, response.get() + sizeof(uint32_t), sizeof(uint64_t));
+
+    std::cout<<conn_id<<": "<<"enqueueing msg "<<msg_id<<std::endl;
+
     context_.post(
       [this, self, response, response_size]() {
         auto self_io(shared_from_this());
+
+        uint64_t msg_id;
+        memcpy (&msg_id, response.get() + sizeof(uint32_t), sizeof(uint64_t));
+
+        std::cout<<conn_id<<": "<<"writing msg "<<msg_id<<std::endl;
         asio::async_write(socket_, asio::buffer(response.get(), response_size),
-          [this, self_io](std::error_code ec, std::size_t length) {
+          [this, self_io, response](std::error_code ec, std::size_t length) {
             if (ec) {
               (*counter_)--;
-              std::cout<<"Socket write error"<<std::endl;
+              std::cout<<conn_id<<": "<<"Socket write error"<<std::endl;
+            } else {
+              uint64_t msg_id;
+              memcpy (&msg_id, response.get() + sizeof(uint32_t), sizeof(uint64_t));
+
+              std::cout<<conn_id<<": "<<"Sent msg "<<msg_id<<" size: "<<length<<std::endl;
             }
           });
       });
@@ -252,7 +283,8 @@ class server {
          short port)
     : io_contexts_(io_contexts),
       acceptor_(*io_contexts[0], tcp::endpoint(tcp::v4(), port)),
-      context_(asio::ssl::context::sslv23) {
+      context_(asio::ssl::context::sslv23),
+      conn_count(0) {
     for (size_t i = 0; i < io_contexts.size(); ++i) {
       counts_.push_back(std::make_shared<std::atomic<uint32_t>>(0));
     }
@@ -287,7 +319,7 @@ class server {
       }
     }
 
-    auto conn = std::make_shared<Connection>(*io_contexts_[lowpos], context_, this->counts_[lowpos]);
+    auto conn = std::make_shared<Connection>(conn_count++, *io_contexts_[lowpos], context_, this->counts_[lowpos]);
 
     acceptor_.async_accept(
         conn->socket(),
@@ -305,6 +337,7 @@ class server {
   tcp::acceptor acceptor_;
   std::vector<std::shared_ptr<std::atomic<uint32_t>>> counts_;
   asio::ssl::context context_;
+  int conn_count;
 };
 
 std::function<void(int)> sigusr1_handler;

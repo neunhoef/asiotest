@@ -67,7 +67,12 @@ class Connection : public std::enable_shared_from_this<Connection>
   uint64_t recevied_msgs;
 
 public:
-  Connection(ClientContext &ctx, int i) : ctx(ctx), ssl_context_(asio::ssl::context::sslv23), socket_(*ctx.io_contexts[i % ctx.io_contexts.size()], ssl_context_), i(i) {
+  Connection(ClientContext &ctx, int i_) :
+    ctx(ctx),
+    ssl_context_(asio::ssl::context::sslv23),
+    socket_(*ctx.io_contexts[i_ % ctx.io_contexts.size()], ssl_context_),
+    i(i_)
+  {
     try
     {
       socket_.set_verify_mode(asio::ssl::verify_none);
@@ -115,6 +120,8 @@ public:
   void do_read()
   {
 
+    std::cout<<"setup do_read on "<<i<<std::endl;
+
     auto self(shared_from_this());
 
     auto buffer = asio::buffer(
@@ -127,6 +134,8 @@ public:
       if (ec) {
         std::cout<<"Client read error: "<<ec<<std::endl;
         return ;
+      } else {
+        std::cout<<"On read: "<<ec<<" bytes_read: "<<bytes_read<<std::endl;
       }
 
       recv_buffer_write_offset += bytes_read;
@@ -134,8 +143,12 @@ public:
 
       while (true)
       {
+
+
         size_t bytes_available = recv_buffer_write_offset
           - recv_buffer_read_offset;
+
+        std::cout<<"Bytes available "<<bytes_available<<" at "<<i<<std::endl;
 
         if (bytes_available > sizeof(uint32_t)) {
           // we can read the msg length
@@ -180,6 +193,8 @@ public:
           } else {
             size_t realloc_size = recv_msg_size + sizeof(uint32_t);
 
+            std::cout<<"No more data (msgpayload)"<<i<<std::endl;
+
             // msg not yet received, check if enough space is available
             if (bytes_free <= realloc_size)
             {
@@ -192,6 +207,7 @@ public:
             break ;
           }
         } else {
+          std::cout<<"No more data (msglen) "<<i<<std::endl;
           // next message length not received
           break ;
         }
@@ -221,7 +237,10 @@ public:
     memcpy(request + sizeof(uint32_t), &msg_id, sizeof(uint64_t));
 
     ctx.times[msg_id] = get_tick_count_ns();
-    asio::async_write(socket_, asio::buffer(request, sizeof(uint32_t) + size), [](std::error_code ec, size_t bytes_written) {});
+    asio::async_write(socket_, asio::buffer(request, sizeof(uint32_t) + size), [msg_id](std::error_code ec, size_t bytes_written) {
+
+      std::cout<<"Sent msg "<<msg_id<<": "<<ec<<" bytes_written:"<<bytes_written<<std::endl;
+    });
 
     std::cout<<"send msg "<<msg_id<<" on "<<i<<std::endl;
   }
