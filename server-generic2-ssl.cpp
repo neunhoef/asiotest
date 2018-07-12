@@ -24,6 +24,7 @@
 #include "lockfree_richard_worker_farm.h"
 #include "std_worker_farm.hpp"
 #include "fire_forget_worker_farm.hpp"
+#include "buffer_holder.hpp"
 //#include "smart_buffer.hpp"
 
 using asio::ip::tcp;
@@ -32,25 +33,6 @@ WorkerFarm *workerFarm;
 
 uint64_t globalDelay = 0;
 typedef asio::ssl::stream<asio::ip::tcp::socket> ssl_socket;
-
-class BufferHolder
-{
-  uint8_t *_buffer;
-
-public:
-  BufferHolder(uint8_t *buffer) : _buffer(buffer) {}
-  ~BufferHolder() {
-    if (_buffer) {
-      free (_buffer);
-    }
-  }
-
-  uint8_t *get() {
-    return _buffer;
-  }
-
-  //operator uint8_t*() const { return _buffer; }
-};
 
 class AdvancedWork : public Work
 {
