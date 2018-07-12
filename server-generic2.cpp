@@ -19,6 +19,7 @@
 #include "lockfree_richard_worker_farm.h"
 #include "std_worker_farm.hpp"
 #include "fire_forget_worker_farm.hpp"
+#include "buffer_holder.hpp"
 //#include "smart_buffer.hpp"
 
 using asio::ip::tcp;
@@ -31,17 +32,17 @@ uint64_t globalDelay = 0;
 class AdvancedWork : public Work
 {
 public:
-  typedef std::function<void(std::shared_ptr<uint8_t[]>, size_t)> on_completion_cb_t;
+  typedef std::function<void(std::shared_ptr<BufferHolder>, size_t)> on_completion_cb_t;
 
 
 
-  std::shared_ptr<uint8_t[]> request_buffer;
+  std::shared_ptr<BufferHolder> request_buffer;
   size_t request_size, request_offset;
 
   on_completion_cb_t completion_;
 
   public:
-    AdvancedWork (std::shared_ptr<uint8_t[]> request, size_t request_offset,
+    AdvancedWork (std::shared_ptr<BufferHolder> request, size_t request_offset,
       size_t request_size, on_completion_cb_t completion) :
       request_buffer(request), request_size(request_size), request_offset(request_offset), completion_(completion) {}
 
@@ -59,9 +60,9 @@ public:
       uint32_t request_size_32 = request_size;
       memcpy (response, &request_size_32, sizeof(uint32_t));
       memcpy (response + 3 * sizeof(uint32_t), &delay, sizeof(uint64_t));
-      memcpy (response + sizeof(uint32_t), request_buffer.get() + request_offset, request_size);
+      memcpy (response + sizeof(uint32_t), request_buffer->get() + request_offset, request_size);
 
-      std::shared_ptr<uint8_t[]> shared(response);
+      std::shared_ptr<BufferHolder> shared(new BufferHolder(response));
 
       completion_(shared, request_size + sizeof(uint32_t));
     }
@@ -85,7 +86,7 @@ class Connection : public std::enable_shared_from_this<Connection>
 
 
 
-  std::shared_ptr<uint8_t[]> recv_buffer;
+  std::shared_ptr<BufferHolder> recv_buffer;
   size_t recv_buffer_size;
   size_t recv_buffer_write_offset;
   size_t recv_buffer_read_offset;
@@ -98,7 +99,7 @@ public:
   }
 
   void start() {
-    recv_buffer.reset(new uint8_t[2048]);
+    recv_buffer.reset(new BufferHolder(new uint8_t[2048]));
     recv_buffer_size            = 2048;
     recv_buffer_write_offset    = 0;
     recv_buffer_read_offset     = 0;
@@ -120,9 +121,9 @@ public:
 
 
       size_t bytes_to_copy = recv_buffer_write_offset - recv_buffer_read_offset;
-      memcpy (new_buffer, recv_buffer.get() + recv_buffer_read_offset, bytes_to_copy);
+      memcpy (new_buffer, recv_buffer->get() + recv_buffer_read_offset, bytes_to_copy);
 
-      recv_buffer.reset(new_buffer);
+      recv_buffer.reset(new BufferHolder(new_buffer));
       recv_buffer_read_offset   = 0;
       recv_buffer_write_offset  = bytes_to_copy;
       recv_buffer_size          = new_size;
@@ -134,7 +135,7 @@ public:
     auto self(shared_from_this());
 
     auto buffer = asio::buffer(
-      recv_buffer.get() + recv_buffer_write_offset,
+      recv_buffer->get() + recv_buffer_write_offset,
       recv_buffer_size - recv_buffer_write_offset
     );
 
@@ -155,7 +156,7 @@ public:
         if (bytes_available > sizeof(uint32_t)) {
           // we can read the msg length
           uint32_t recv_msg_size;
-          memcpy (&recv_msg_size, recv_buffer.get() + recv_buffer_read_offset, sizeof(uint32_t));
+          memcpy (&recv_msg_size, recv_buffer->get() + recv_buffer_read_offset, sizeof(uint32_t));
           bytes_available -= sizeof(uint32_t);
 
           if (bytes_available >= recv_msg_size) {
@@ -164,7 +165,7 @@ public:
 
             // pass the message to the worker
             AdvancedWork *work = new AdvancedWork(recv_buffer, recv_buffer_read_offset, recv_msg_size,
-              [this, self] (std::shared_ptr<uint8_t[]> response, size_t response_size) { this->do_write(response, response_size); });
+              [this, self] (std::shared_ptr<BufferHolder> response, size_t response_size) { this->do_write(response, response_size); });
             workerFarm->submit(work);
 
             recv_buffer_read_offset += recv_msg_size;
@@ -203,7 +204,7 @@ public:
 
 
 
-  void do_write(std::shared_ptr<uint8_t[]> response, size_t response_size) {
+  void do_write(std::shared_ptr<BufferHolder> response, size_t response_size) {
     // Note that this is typically called by a thread that is not in a
     // run() method of this io_context. Therefore, to make sure that this
     // all works with SSL later, we have to make sure that the async_write
@@ -213,7 +214,7 @@ public:
     context_.post(
       [this, self, response, response_size]() {
         auto self_io(shared_from_this());
-        asio::async_write(socket_, asio::buffer(response.get(), response_size),
+        asio::async_write(socket_, asio::buffer(response->get(), response_size),
           [this, self_io](std::error_code ec, std::size_t length) {
             if (ec) {
               (*counter_)--;
