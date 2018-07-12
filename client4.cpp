@@ -3,6 +3,8 @@
 #include <iostream>
 #include "asio.hpp"
 
+#include "buffer_holder.hpp"
+
 using asio::ip::tcp;
 using asio::ip::basic_resolver;
 
@@ -53,7 +55,7 @@ class Connection : public std::enable_shared_from_this<Connection>
   ClientContext &ctx;
   tcp::socket socket_;
 
-  std::shared_ptr<uint8_t[]> recv_buffer;
+  std::shared_ptr<BufferHolder> recv_buffer;
   size_t recv_buffer_size;
   size_t recv_buffer_write_offset;
   size_t recv_buffer_read_offset;
@@ -62,7 +64,7 @@ public:
   Connection(ClientContext &ctx, int i) : ctx(ctx), socket_(*ctx.io_contexts[i % ctx.io_contexts.size()]) {
     asio::connect(socket_, ctx.resolved);
 
-    recv_buffer.reset(new uint8_t[2048]);
+    recv_buffer.reset(new BufferHolder(new uint8_t[2048]));
     recv_buffer_size            = 2048;
     recv_buffer_write_offset    = 0;
     recv_buffer_read_offset     = 0;
@@ -80,9 +82,9 @@ public:
 
 
       size_t bytes_to_copy = recv_buffer_write_offset - recv_buffer_read_offset;
-      memcpy (new_buffer, recv_buffer.get() + recv_buffer_read_offset, bytes_to_copy);
+      memcpy (new_buffer, recv_buffer->get() + recv_buffer_read_offset, bytes_to_copy);
 
-      recv_buffer.reset(new_buffer);
+      recv_buffer.reset(new BufferHolder(new_buffer));
       recv_buffer_read_offset   = 0;
       recv_buffer_write_offset  = bytes_to_copy;
       recv_buffer_size          = new_size;
@@ -95,7 +97,7 @@ public:
     auto self(shared_from_this());
 
     auto buffer = asio::buffer(
-      recv_buffer.get() + recv_buffer_write_offset,
+      recv_buffer->get() + recv_buffer_write_offset,
       recv_buffer_size - recv_buffer_write_offset
     );
 
@@ -116,7 +118,7 @@ public:
         if (bytes_available > sizeof(uint32_t)) {
           // we can read the msg length
           uint32_t recv_msg_size;
-          memcpy (&recv_msg_size, recv_buffer.get() + recv_buffer_read_offset, sizeof(uint32_t));
+          memcpy (&recv_msg_size, recv_buffer->get() + recv_buffer_read_offset, sizeof(uint32_t));
           bytes_available -= sizeof(uint32_t);
 
           if (bytes_available >= recv_msg_size) {
@@ -125,7 +127,7 @@ public:
 
             // get msg id
             uint64_t msg_id;
-            memcpy (&msg_id, recv_buffer.get() + recv_buffer_read_offset, sizeof(uint64_t));
+            memcpy (&msg_id, recv_buffer->get() + recv_buffer_read_offset, sizeof(uint64_t));
 
             //std::cout<<"Received msg "<<msg_id<<std::endl;
 
