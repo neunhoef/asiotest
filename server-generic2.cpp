@@ -175,6 +175,7 @@ public:
             // msg not yet received, check if enough space is available
             if (bytes_free <= realloc_size)
             {
+
               // not enough memory available, realloc
               realloc_recv_buffer (realloc_size);
               do_read();
@@ -194,6 +195,8 @@ public:
         // not enough memory available, realloc
         realloc_recv_buffer (2048);
       }
+
+
 
       do_read();
     };

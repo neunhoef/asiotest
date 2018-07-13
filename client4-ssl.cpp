@@ -122,7 +122,7 @@ class Connection : public std::enable_shared_from_this<Connection>
   uint64_t recevied_msgs;
   uint64_t sent_msgs;
 
-  std::deque<std::tuple<std::shared_ptr<BufferHolder>, size_t>> write_queue_;
+  std::vector<std::tuple<std::shared_ptr<BufferHolder>, size_t>> write_queue_;
   bool write_pending;
 
 public:
@@ -280,7 +280,8 @@ public:
 
   void do_do_write (std::shared_ptr<BufferHolder> request, size_t size)
   {
-    /*auto self(shared_from_this());
+    auto self(shared_from_this());
+
     asio::async_write(socket_, asio::buffer(request->get(), size),
       [this, self, request](std::error_code ec, size_t bytes_written) {
 
@@ -290,23 +291,73 @@ public:
 
       sent_msgs++;
 
+      //std::cout<<"Sent already "<<sent_msgs<<" of "<<ctx.num_req_pre_thrd<<std::endl;
+
       if (sent_msgs == ctx.num_req_pre_thrd)
       {
         //socket_.shutdown();
       }
 
       if (write_queue_.size() != 0) {
+        /*
         auto next_write = write_queue_.front();
         write_queue_.pop_front();
 
-        do_do_write(std::get<0>(next_write), std::get<1>(next_write));
+        do_do_write(std::get<0>(next_write), std::get<1>(next_write));*/
+
+        do_do_write_vec();
       } else {
         write_pending = false;
       }
 
-    });*/
+    });
+  }
 
-    while(true) {
+  void do_do_write_vec ()
+  {
+    auto self(shared_from_this());
+
+    auto local_queue = new decltype(write_queue_)();
+    local_queue->swap(write_queue_);
+
+    // create a vector of asio::buffers
+    std::vector<asio::mutable_buffers_1> buffers;
+
+    //std::cout<<"Writing "<<local_queue->size()<<" buffers at once."<<std::endl;
+
+    for (auto &p : *local_queue)
+    {
+      buffers.push_back(asio::buffer(std::get<0>(p)->get(), std::get<1>(p)));
+    }
+
+    asio::async_write(socket_, buffers,
+      [this, self, local_queue](std::error_code ec, size_t bytes_written) {
+
+      if (ec) {
+        std::cout<<"async_write error: "<<ec<<std::endl;
+      }
+
+      sent_msgs += local_queue->size();
+      //std::cout<<"Sent already "<<sent_msgs<<" of "<<ctx.num_req_pre_thrd<<std::endl;
+
+      delete local_queue;
+
+      if (sent_msgs == ctx.num_req_pre_thrd)
+      {
+        //socket_.shutdown();
+      }
+
+      if (write_queue_.size() != 0) {
+
+        do_do_write_vec();
+      } else {
+        write_pending = false;
+      }
+
+    });
+
+
+    /*while(true) {
       asio::write(socket_, asio::buffer(request->get(), size));
 
       if (write_queue_.size() != 0) {
@@ -320,7 +371,7 @@ public:
         write_pending = false;
         break ;
       }
-    }
+    }*/
 
   }
 

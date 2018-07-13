@@ -100,7 +100,7 @@ class Connection : public std::enable_shared_from_this<Connection>
 
   int conn_id, total_sent, total_recvd;
 
-  std::deque<std::tuple<std::shared_ptr<BufferHolder>, size_t>> write_queue_;
+  std::vector<std::tuple<std::shared_ptr<BufferHolder>, size_t>> write_queue_;
   bool write_pending;
 
 
@@ -213,6 +213,8 @@ public:
           memcpy (&recv_msg_size, recv_buffer->get() + recv_buffer_read_offset, sizeof(uint32_t));
           bytes_available -= sizeof(uint32_t);
 
+          //std::cout<<"Received msg of size "<<recv_msg_size<<" / "<<bytes_available<<std::endl;
+
           if (bytes_available >= recv_msg_size) {
             // the whole msg is available
             recv_buffer_read_offset += sizeof(uint32_t);
@@ -222,6 +224,7 @@ public:
             //std::cout<<conn_id<<": Received msg "<<msg_id<<std::endl;
 
             total_recvd++;
+            //std::cout<<"Received "<<total_recvd<<std::endl;
 
             // pass the message to the worker
             AdvancedWork *work = new AdvancedWork(recv_buffer, recv_buffer_read_offset, recv_msg_size,
@@ -229,6 +232,8 @@ public:
             workerFarm->submit(work);
 
             recv_buffer_read_offset += recv_msg_size;
+
+
           } else {
             size_t realloc_size = recv_msg_size + sizeof(uint32_t);
 
@@ -261,51 +266,89 @@ public:
     socket_.async_read_some(buffer, _on_read);
   }
 
-  void do_do_write(std::shared_ptr<BufferHolder> response, size_t response_size) {
-    /*
+  void do_do_write (std::shared_ptr<BufferHolder> request, size_t size)
+  {
     auto self(shared_from_this());
 
-    asio::async_write(socket_, asio::buffer(response->get(), response_size),
-      [this, self, response](std::error_code ec, std::size_t length) {
-        if (ec) {
-          (*counter_)--;
-          std::cout<<conn_id<<": "<<"Socket write error"<<std::endl;
-        } else {
-          uint64_t msg_id;
-          memcpy (&msg_id, response->get() + sizeof(uint32_t), sizeof(uint64_t));
+    asio::async_write(socket_, asio::buffer(request->get(), size),
+      [this, self, request](std::error_code ec, size_t bytes_written) {
 
-          total_sent++;
+      if (ec) {
+        std::cout<<"async_write error: "<<ec<<std::endl;
+      }
 
-          if (write_queue_.size() != 0) {
-            auto next_write = write_queue_.front();
-            write_queue_.pop_front();
+      if (write_queue_.size() != 0) {
+        /*
+        auto next_write = write_queue_.front();
+        write_queue_.pop_front();
 
-            do_do_write(std::get<0>(next_write), std::get<1>(next_write));
-          } else {
-            write_pending = false;
-          }
-        }
-      });*/
+        do_do_write(std::get<0>(next_write), std::get<1>(next_write));*/
 
-    while(true) {
-      asio::write(socket_, asio::buffer(response->get(), response_size));
+        do_do_write_vec();
+      } else {
+        write_pending = false;
+      }
 
-      total_sent++;
+    });
+  }
+
+  void do_do_write_vec ()
+  {
+    auto self(shared_from_this());
+
+    auto local_queue = new decltype(write_queue_)();
+    local_queue->swap(write_queue_);
+
+    // create a vector of asio::buffers
+    std::vector<asio::mutable_buffers_1> buffers;
+
+    //std::cout<<"Writing "<<local_queue->size()<<" buffers at once."<<std::endl;
+
+    for (auto &p : *local_queue)
+    {
+      buffers.push_back(asio::buffer(std::get<0>(p)->get(), std::get<1>(p)));
+    }
+
+    asio::async_write(socket_, buffers,
+      [this, self, local_queue](std::error_code ec, size_t bytes_written) {
+
+      if (ec) {
+        std::cout<<"async_write error: "<<ec<<std::endl;
+      }
+
+      //std::cout<<"Sent already "<<sent_msgs<<" of "<<ctx.num_req_pre_thrd<<std::endl;
+
+      delete local_queue;
+
+
+      if (write_queue_.size() != 0) {
+
+        do_do_write_vec();
+      } else {
+        write_pending = false;
+      }
+
+    });
+
+
+    /*while(true) {
+      asio::write(socket_, asio::buffer(request->get(), size));
 
       if (write_queue_.size() != 0) {
         auto next_write = write_queue_.front();
         write_queue_.pop_front();
 
-        response = std::move(std::get<0>(next_write));
-        response_size = std::get<1>(next_write);
+        request = std::move(std::get<0>(next_write));
+        size = std::get<1>(next_write);
 
       } else {
         write_pending = false;
         break ;
       }
-    }
+    }*/
 
   }
+
 
   void do_write(std::shared_ptr<BufferHolder> response, size_t response_size) {
     // Note that this is typically called by a thread that is not in a
