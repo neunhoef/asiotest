@@ -296,21 +296,19 @@ public:
     // run() method of this io_context. Therefore, to make sure that this
     // all works with SSL later, we have to make sure that the async_write
     // is actually executed on the thread that is run()ing in the io_context!
-    auto self(shared_from_this());
-
-    uint64_t msg_id;
-    memcpy (&msg_id, response->get() + sizeof(uint32_t), sizeof(uint64_t));
 
     //std::cout<<conn_id<<": "<<"enqueueing msg "<<msg_id<<std::endl;
 
     //std::cout<<conn_id<<": "<<"writing msg "<<msg_id<<std::endl;
 
-    if (write_pending) {
-      write_queue_.emplace_back(response, response_size);
-    } else {
-      write_pending = true;
-      do_do_write(response, response_size);
-    }
+    context_.post([this, response, response_size]() {
+      if (write_pending) {
+        write_queue_.emplace_back(response, response_size);
+      } else {
+        write_pending = true;
+        do_do_write(response, response_size);
+      }
+    });
   }
 
 
