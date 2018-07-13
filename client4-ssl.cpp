@@ -9,7 +9,7 @@
 #include <sys/types.h>
 #include <iomanip>
 
-#include <openssl/ssl.h>
+//#include <openssl/ssl.h>
 
 #include "buffer_holder.hpp"
 
@@ -25,10 +25,11 @@ int pthread_getthreadid_np()
   return  pthread_self();
 }
 
+/*
 std::mutex mutex_;
 std::fstream client_random("./client_random.data", std::ios_base::out|std::ios_base::ate);
 
-void output_client_key (asio::ssl::stream</**/asio::ip::tcp::socket/**/> &socket)
+void output_client_key (asio::ssl::stream<asio::ip::tcp::socket> &socket)
 {
   std::lock_guard<std::mutex> guard(mutex_);
   std::cout<<"Output SSL Session data"<<std::endl;
@@ -63,7 +64,7 @@ void output_client_key (asio::ssl::stream</**/asio::ip::tcp::socket/**/> &socket
 
   client_random<<std::endl;
 }
-
+*/
 
 uint64_t get_tick_count_ns ()
 {
