@@ -112,8 +112,6 @@ class Connection : public std::enable_shared_from_this<Connection>
   asio::ssl::context ssl_context_;
   /**/asio::ssl::stream</**/asio::ip::tcp::socket/**/>/**/ socket_;
 
-  asio::io_context::strand strand_;
-
   std::shared_ptr<BufferHolder> recv_buffer;
   size_t recv_buffer_size;
   size_t recv_buffer_write_offset;
@@ -132,7 +130,6 @@ public:
     ctx(ctx),
     ssl_context_(asio::ssl::context::sslv23),
     socket_(*ctx.io_contexts[i_ % ctx.io_contexts.size()]/**/, ssl_context_/**/),
-    strand_(*ctx.io_contexts[i_ % ctx.io_contexts.size()]),
     i(i_),
     write_pending(false)
   {
@@ -140,12 +137,8 @@ public:
     {
       socket_.set_verify_mode(asio::ssl::verify_none);
 
-      strand_.post([this, &ctx](){
-        asio::connect(socket_.lowest_layer(), ctx.resolved);
-        socket_.handshake(asio::ssl::stream_base::client);
-
-        //output_client_key(socket_);
-      });
+      asio::connect(socket_.lowest_layer(), ctx.resolved);
+      socket_.handshake(asio::ssl::stream_base::client);
 
       recv_buffer.reset(new BufferHolder(new uint8_t[2048]));
       recv_buffer_size            = 2048;
@@ -179,10 +172,6 @@ public:
       recv_buffer_write_offset  = bytes_to_copy;
       recv_buffer_size          = new_size;
     }
-  }
-
-  asio::io_context::strand &get_strand() {
-    return strand_;
   }
 
   void do_read()
@@ -286,14 +275,14 @@ public:
       do_read();
     };
 
-    socket_.async_read_some(buffer, strand_.wrap(_on_read));
+    socket_.async_read_some(buffer, _on_read);
   }
 
   void do_do_write (std::shared_ptr<BufferHolder> request, size_t size)
   {
-
-    asio::async_write(socket_, asio::buffer(request->get(), size), strand_.wrap(
-      [this, request](std::error_code ec, size_t bytes_written) {
+    auto self(shared_from_this());
+    asio::async_write(socket_, asio::buffer(request->get(), size),
+      [this, self, request](std::error_code ec, size_t bytes_written) {
 
       if (ec) {
         std::cout<<"async_write error: "<<ec<<std::endl;
@@ -315,7 +304,7 @@ public:
         write_pending = false;
       }
 
-    }));
+    });
 
   }
 
@@ -346,8 +335,6 @@ public:
 
     do_write(shared, sizeof(uint32_t) + size);
 
-
-
     //std::cout<<"send msg "<<msg_id<<" on "<<i<<std::endl;
   }
 };
@@ -362,7 +349,7 @@ void do_out_work (ClientContext &ctx, uint64_t msg_id_start, int i) {
 
     sleep(1);
 
-    connection->get_strand().post([connection]() {
+    ctx.io_contexts[i % ctx.io_contexts.size()]->post([connection]() {
       connection->do_read();
     });
 
@@ -372,7 +359,7 @@ void do_out_work (ClientContext &ctx, uint64_t msg_id_start, int i) {
     {
       uint64_t msg_id = msg_id_start + j;
 
-      connection->get_strand().post([connection, msg_id]() {
+      ctx.io_contexts[i % ctx.io_contexts.size()]->post([connection, msg_id]() {
         connection->generate_work(msg_id);
       });
 
@@ -471,7 +458,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::thread> threads;
     for (unsigned int i = 1; i < num_in_thrds; i++)
     {
-      threads.emplace_back([i, &ctx]() { std::cout<<"IO-Thread ID: "<<pthread_getthreadid_np()<<std::endl; ctx.io_contexts[i]->run(); });
+      threads.emplace_back([i, &ctx]() { ctx.io_contexts[i]->run(); });
     }
 
     for (unsigned int i = 0; i < num_out_thrds; ++i) {
