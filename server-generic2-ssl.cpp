@@ -89,6 +89,8 @@ class Connection : public std::enable_shared_from_this<Connection>
   asio::ssl::stream<asio::ip::tcp::socket> socket_;
   asio::io_context& context_;
 
+  asio::io_context::strand strand_;
+
   std::shared_ptr<std::atomic<uint32_t>> counter_;
 
 
@@ -98,7 +100,10 @@ class Connection : public std::enable_shared_from_this<Connection>
   size_t recv_buffer_write_offset;
   size_t recv_buffer_read_offset;
 
-  int conn_id;
+  int conn_id, total_sent, total_recvd;
+
+  std::deque<std::tuple<std::shared_ptr<BufferHolder>, size_t>> write_queue_;
+  bool write_pending;
 
 
 public:
@@ -106,15 +111,19 @@ public:
     :
     socket_(io_context/**/, ssl_context/**/),
     context_(io_context),
+    strand_(io_context),
     counter_(counter),
-    conn_id(conn_id)
+    conn_id(conn_id),
+    total_sent(0),
+    total_recvd(0),
+    write_pending(false)
     {
   }
 
-  /*~Connection()
+  ~Connection()
   {
-    std::cout<<conn_id<<": "<<"Closing connection"<<std::endl;
-  }*/
+    //std::cout<<conn_id<<": "<<"Closing connection"<<std::endl;
+  }
 
   void start() {
 
@@ -126,15 +135,21 @@ public:
     recv_buffer_read_offset     = 0;
     try {
       /*socket_.handshake(asio::ssl::stream<asio::ip::tcp::socket>::server);*/
-      socket_.async_handshake(asio::ssl::stream<asio::ip::tcp::socket>::server,
-        [this, self](const std::error_code& ec) {
-          if (ec) {
-            std::cout<<conn_id<<": Handshake failure "<<ec<<std::endl;
-          } else {
-            //std::cout<<conn_id<<": Handshake success "<<ec<<std::endl;
-            do_read();
-          }
-        });
+      strand_.post([this, self]() {
+        auto self_strand(shared_from_this());
+
+        socket_.async_handshake(asio::ssl::stream<asio::ip::tcp::socket>::server,
+          strand_.wrap([this, self_strand](const std::error_code& ec) {
+
+
+            if (ec) {
+              std::cout<<conn_id<<": Handshake failure "<<ec<<std::endl;
+            } else {
+              //std::cout<<conn_id<<": Handshake success "<<ec<<std::endl;
+              do_read();
+            }
+          }));
+      });
     } catch (std::exception& e) {
       std::cerr <<conn_id<<": "<< "Exception: " << e.what() << "\n";
     }
@@ -207,6 +222,12 @@ public:
             // the whole msg is available
             recv_buffer_read_offset += sizeof(uint32_t);
 
+            uint64_t msg_id;
+            memcpy(&msg_id, recv_buffer->get() + recv_buffer_read_offset, sizeof(uint64_t));
+            //std::cout<<conn_id<<": Received msg "<<msg_id<<std::endl;
+
+            total_recvd++;
+
             // pass the message to the worker
             AdvancedWork *work = new AdvancedWork(recv_buffer, recv_buffer_read_offset, recv_msg_size,
               [this, self] (std::shared_ptr<BufferHolder> response, size_t response_size) { this->do_write(response, response_size); });
@@ -242,9 +263,38 @@ public:
       do_read();
     };
 
-    socket_.async_read_some(buffer, _on_read);
+    socket_.async_read_some(buffer, strand_.wrap(_on_read));
   }
 
+  void do_do_write(std::shared_ptr<BufferHolder> response, size_t response_size) {
+
+    auto self(shared_from_this());
+
+    asio::async_write(socket_, asio::buffer(response->get(), response_size),
+      [this, self, response](std::error_code ec, std::size_t length) {
+        if (ec) {
+          (*counter_)--;
+          std::cout<<conn_id<<": "<<"Socket write error"<<std::endl;
+        } else {
+          uint64_t msg_id;
+          memcpy (&msg_id, response->get() + sizeof(uint32_t), sizeof(uint64_t));
+
+          total_sent++;
+
+          //std::cout<<conn_id<<": "<<"Sent msg "<<msg_id<<" size: "<<length<<std::endl;
+          //std::cout<<"\t"<<total_sent<<" of "<<total_recvd<<" recvd"<<std::endl;
+
+          if (write_queue_.size() != 0) {
+            auto next_write = write_queue_.front();
+            write_queue_.pop_front();
+
+            do_do_write(std::get<0>(next_write), std::get<1>(next_write));
+          } else {
+            write_pending = false;
+          }
+        }
+      });
+  }
 
   void do_write(std::shared_ptr<BufferHolder> response, size_t response_size) {
     // Note that this is typically called by a thread that is not in a
@@ -258,26 +308,21 @@ public:
 
     //std::cout<<conn_id<<": "<<"enqueueing msg "<<msg_id<<std::endl;
 
-    context_.post(
+    strand_.post(
       [this, self, response, response_size]() {
-        auto self_io(shared_from_this());
+
 
         uint64_t msg_id;
         memcpy (&msg_id, response->get() + sizeof(uint32_t), sizeof(uint64_t));
 
         //std::cout<<conn_id<<": "<<"writing msg "<<msg_id<<std::endl;
-        asio::/*async_*/write(socket_, asio::buffer(response->get(), response_size)/*,
-          [this, self_io, response](std::error_code ec, std::size_t length) {
-            if (ec) {
-              (*counter_)--;
-              std::cout<<conn_id<<": "<<"Socket write error"<<std::endl;
-            } else {
-              uint64_t msg_id;
-              memcpy (&msg_id, response.get() + sizeof(uint32_t), sizeof(uint64_t));
 
-              std::cout<<conn_id<<": "<<"Sent msg "<<msg_id<<" size: "<<length<<std::endl;
-            }
-          }*/);
+        if (write_pending) {
+          write_queue_.emplace_back(response, response_size);
+        } else {
+          write_pending = true;
+          do_do_write(response, response_size);
+        }
       });
   }
 
@@ -410,7 +455,7 @@ int main(int argc, char* argv[])
     std::vector<std::unique_ptr<asio::io_context>> io_contexts;
     std::vector<asio::io_context::work> works;
     for (int i = 0; i < nrIOThreads; ++i) {
-      io_contexts.emplace_back(std::unique_ptr<asio::io_context>(new asio::io_context(1)));
+      io_contexts.emplace_back(std::unique_ptr<asio::io_context>(new asio::io_context()));
       works.emplace_back(*io_contexts.back());
     }
 
