@@ -89,8 +89,6 @@ class Connection : public std::enable_shared_from_this<Connection>
   asio::ssl::stream<asio::ip::tcp::socket> socket_;
   asio::io_context& context_;
 
-  asio::io_context::strand strand_;
-
   std::shared_ptr<std::atomic<uint32_t>> counter_;
 
 
@@ -111,7 +109,6 @@ public:
     :
     socket_(io_context/**/, ssl_context/**/),
     context_(io_context),
-    strand_(io_context),
     counter_(counter),
     conn_id(conn_id),
     total_sent(0),
@@ -135,21 +132,19 @@ public:
     recv_buffer_read_offset     = 0;
     try {
       /*socket_.handshake(asio::ssl::stream<asio::ip::tcp::socket>::server);*/
-      strand_.post([this, self]() {
-        auto self_strand(shared_from_this());
 
-        socket_.async_handshake(asio::ssl::stream<asio::ip::tcp::socket>::server,
-          strand_.wrap([this, self_strand](const std::error_code& ec) {
+      socket_.async_handshake(asio::ssl::stream<asio::ip::tcp::socket>::server,
+        [this, self](const std::error_code& ec) {
 
 
-            if (ec) {
-              std::cout<<conn_id<<": Handshake failure "<<ec<<std::endl;
-            } else {
-              //std::cout<<conn_id<<": Handshake success "<<ec<<std::endl;
-              do_read();
-            }
-          }));
-      });
+          if (ec) {
+            std::cout<<conn_id<<": Handshake failure "<<ec<<std::endl;
+          } else {
+            //std::cout<<conn_id<<": Handshake success "<<ec<<std::endl;
+            do_read();
+          }
+        });
+
     } catch (std::exception& e) {
       std::cerr <<conn_id<<": "<< "Exception: " << e.what() << "\n";
     }
@@ -263,7 +258,7 @@ public:
       do_read();
     };
 
-    socket_.async_read_some(buffer, strand_.wrap(_on_read));
+    socket_.async_read_some(buffer, _on_read);
   }
 
   void do_do_write(std::shared_ptr<BufferHolder> response, size_t response_size) {
@@ -308,22 +303,14 @@ public:
 
     //std::cout<<conn_id<<": "<<"enqueueing msg "<<msg_id<<std::endl;
 
-    strand_.post(
-      [this, self, response, response_size]() {
+    //std::cout<<conn_id<<": "<<"writing msg "<<msg_id<<std::endl;
 
-
-        uint64_t msg_id;
-        memcpy (&msg_id, response->get() + sizeof(uint32_t), sizeof(uint64_t));
-
-        //std::cout<<conn_id<<": "<<"writing msg "<<msg_id<<std::endl;
-
-        if (write_pending) {
-          write_queue_.emplace_back(response, response_size);
-        } else {
-          write_pending = true;
-          do_do_write(response, response_size);
-        }
-      });
+    if (write_pending) {
+      write_queue_.emplace_back(response, response_size);
+    } else {
+      write_pending = true;
+      do_do_write(response, response_size);
+    }
   }
 
 
