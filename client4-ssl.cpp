@@ -280,7 +280,7 @@ public:
 
   void do_do_write (std::shared_ptr<BufferHolder> request, size_t size)
   {
-    auto self(shared_from_this());
+    /*auto self(shared_from_this());
     asio::async_write(socket_, asio::buffer(request->get(), size),
       [this, self, request](std::error_code ec, size_t bytes_written) {
 
@@ -304,7 +304,23 @@ public:
         write_pending = false;
       }
 
-    });
+    });*/
+
+    while(true) {
+      asio::write(socket_, asio::buffer(request->get(), size));
+
+      if (write_queue_.size() != 0) {
+        auto next_write = write_queue_.front();
+        write_queue_.pop_front();
+
+        request = std::move(std::get<0>(next_write));
+        size = std::get<1>(next_write);
+
+      } else {
+        write_pending = false;
+        break ;
+      }
+    }
 
   }
 

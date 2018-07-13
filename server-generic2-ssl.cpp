@@ -262,7 +262,7 @@ public:
   }
 
   void do_do_write(std::shared_ptr<BufferHolder> response, size_t response_size) {
-
+    /*
     auto self(shared_from_this());
 
     asio::async_write(socket_, asio::buffer(response->get(), response_size),
@@ -276,9 +276,6 @@ public:
 
           total_sent++;
 
-          //std::cout<<conn_id<<": "<<"Sent msg "<<msg_id<<" size: "<<length<<std::endl;
-          //std::cout<<"\t"<<total_sent<<" of "<<total_recvd<<" recvd"<<std::endl;
-
           if (write_queue_.size() != 0) {
             auto next_write = write_queue_.front();
             write_queue_.pop_front();
@@ -288,7 +285,26 @@ public:
             write_pending = false;
           }
         }
-      });
+      });*/
+
+    while(true) {
+      asio::write(socket_, asio::buffer(response->get(), response_size));
+
+      total_sent++;
+
+      if (write_queue_.size() != 0) {
+        auto next_write = write_queue_.front();
+        write_queue_.pop_front();
+
+        response = std::move(std::get<0>(next_write));
+        response_size = std::get<1>(next_write);
+
+      } else {
+        write_pending = false;
+        break ;
+      }
+    }
+
   }
 
   void do_write(std::shared_ptr<BufferHolder> response, size_t response_size) {
