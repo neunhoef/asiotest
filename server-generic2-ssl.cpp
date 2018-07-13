@@ -442,7 +442,7 @@ int main(int argc, char* argv[])
     std::vector<std::unique_ptr<asio::io_context>> io_contexts;
     std::vector<asio::io_context::work> works;
     for (int i = 0; i < nrIOThreads; ++i) {
-      io_contexts.emplace_back(std::unique_ptr<asio::io_context>(new asio::io_context()));
+      io_contexts.emplace_back(std::unique_ptr<asio::io_context>(new asio::io_context(1)));
       works.emplace_back(*io_contexts.back());
     }
 

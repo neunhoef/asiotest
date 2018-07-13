@@ -443,7 +443,7 @@ int main(int argc, char* argv[]) {
     std::vector<asio::io_context::work> works;
     for (size_t i = 0; i < num_in_thrds; ++i)
     {
-      ctx.io_contexts.emplace_back(std::unique_ptr<asio::io_context>(new asio::io_context()));
+      ctx.io_contexts.emplace_back(std::unique_ptr<asio::io_context>(new asio::io_context(1)));
       works.emplace_back(*ctx.io_contexts.back());
     }
 
