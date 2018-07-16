@@ -100,7 +100,7 @@ class Connection : public std::enable_shared_from_this<Connection>
 
   int conn_id, total_sent, total_recvd;
 
-  std::vector<std::tuple<std::shared_ptr<BufferHolder>, size_t>> write_queue_;
+  std::deque<std::tuple<std::shared_ptr<BufferHolder>, size_t>> write_queue_;
   bool write_pending;
 
 

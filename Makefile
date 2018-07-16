@@ -46,7 +46,7 @@ client4-ssl: client4-ssl.cpp Makefile
 	g++ ${CPPFLAGS} -o client4-ssl client4-ssl.cpp -std=c++11 -lpthread -I asio/asio/include -lssl -lcrypto
 
 
-server-generic: server-generic.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h
+server-generic: server-generic.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h adv-worker-farm.hpp
 	g++ ${CPPFLAGS} -o server-generic server-generic.cpp -std=c++11 -lpthread -I asio/asio/include
 
 server-generic2: server-generic2.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h
