@@ -20,6 +20,7 @@
 #include "std_worker_farm.hpp"
 #include "fire_forget_worker_farm.hpp"
 #include "buffer_holder.hpp"
+#include "adv-worker-farm.hpp"
 //#include "smart_buffer.hpp"
 
 using asio::ip::tcp;
@@ -289,7 +290,7 @@ enum impl_enum {
   impl_futex = 2,
   impl_richard_lock_free = 3,
   impl_std_mutex = 4,
-  impl_richard_a2 = 5
+  impl_adv = 5
 };
 
 int main(int argc, char* argv[])
@@ -312,6 +313,8 @@ int main(int argc, char* argv[])
       << nrThreads << " worker threads with a delay of " //<< globalDelay
       << std::endl;
 
+    std::vector<std::thread> threads;
+
     switch (impl)
     {
       case impl_richard_lock:
@@ -330,10 +333,11 @@ int main(int argc, char* argv[])
         std::cout<<"Testing std. mutex worker farm"<<std::endl;
         workerFarm = new StdWorkerFarm(10000);
         break ;
-      case impl_richard_a2:
+      case impl_adv:
       default:
-        std::cout<<"Testing std. mutex worker farm"<<std::endl;
-        workerFarm = new FireForgetWorkerFarm(10000);
+        std::cout<<"Testing adv. worker farm"<<std::endl;
+        workerFarm = new AdvStupidWorkerFarm(5000, nrThreads);
+        threads.emplace_back([]() { ((AdvWorkerFarm*) workerFarm)->run_supervisor(); });
         break ;
     }
 
@@ -357,7 +361,7 @@ int main(int argc, char* argv[])
     };
 
     // Start some threads:
-    std::vector<std::thread> threads;
+
     for (int i = 1; i < nrIOThreads; i++) {
       threads.emplace_back([&io_contexts, i]() { pthread_setname_np(pthread_self(), "server-io"); io_contexts[i]->run(); });
     }
