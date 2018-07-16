@@ -210,10 +210,11 @@ public:
     wakeup_time_ns_ = 300000;
     definitive_wakeup_time_ns_ = 61803300;
 
-    for (auto &cfg : worker_cfg_) {
-      cfg.queue_retry_cnt = 100;
-      cfg.sleep_timeout_ms = 100;
+    for (size_t i = 0; i < worker_cfg_.size(); i++) {
+      worker_cfg_[i].queue_retry_cnt = 100;
+      worker_cfg_[i].sleep_timeout_ms = 97 + i;
     }
+
 
     // and do nothing
   }
