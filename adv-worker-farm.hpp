@@ -7,7 +7,8 @@ uint64_t get_tick_count_ns ()
 {
   auto now = std::chrono::high_resolution_clock::now();
 
-  return now.time_since_epoch().count();
+  return std::chrono::duration_cast<std::chrono::nanoseconds>
+    (now.time_since_epoch()).count();
 }
 
 class AdvWorkerFarm : public WorkerFarm
@@ -67,15 +68,16 @@ public:
     uint64_t sleepy_time_ns = now_ns - last_submit_time_ns;
     last_submit_time_ns = now_ns;
 
+    if (sleepy_time_ns > definitive_wakeup_time_ns_.load(std::memory_order_relaxed)) {
+      do_notify = true;
 
-    if (sleepy_time_ns > wakeup_time_ns_) {
+    } else if (sleepy_time_ns > wakeup_time_ns_) {
       if (approx_queue_length > wakeup_queue_length.load(std::memory_order_relaxed)) {
         do_notify = true;
       }
     }
-    else if (sleepy_time_ns > definitive_wakeup_time_ns_.load(std::memory_order_relaxed)) {
-      do_notify = true;
-    }
+
+
 
     if (do_notify) {
       condition_work_.notify_one();
@@ -136,6 +138,8 @@ private:
 
   bool get_work(uint64_t id, Work *&work, WorkerStat &stat)
   {
+    std::cv_status cv_status = std::cv_status::no_timeout;
+
     while (!should_stop_.load(std::memory_order_relaxed))
     {
       worker_configuration &cfg = worker_cfg_[id];
@@ -161,14 +165,21 @@ private:
         break ;
       }
 
-      stat.num_sleeps++;
+      // Only count wakes that are not due to pure timeout
+      // i.e. don't count if timeout and now work performed
+      if (cv_status != std::cv_status::timeout) {
+        stat.num_sleeps++;
+      }
 
       // since a wait for 0 secs does not make any sense, use it to encode indefinite
       // wait time
+
+
       if (cfg.sleep_timeout_ms == 0) {
         condition_work_.wait(guard);
+        cv_status = std::cv_status::no_timeout;
       } else {
-        condition_work_.wait_for(guard, std::chrono::milliseconds(cfg.sleep_timeout_ms));
+        cv_status = condition_work_.wait_for(guard, std::chrono::milliseconds(cfg.sleep_timeout_ms));
       }
     }
 
@@ -197,7 +208,7 @@ public:
     // Initialise everything
     wakeup_queue_length = 5;
     wakeup_time_ns_ = 300000;
-    definitive_wakeup_time_ns_ = 618033000;
+    definitive_wakeup_time_ns_ = 61803300;
 
     for (auto &cfg : worker_cfg_) {
       cfg.queue_retry_cnt = 100;

@@ -394,7 +394,7 @@ int main(int argc, char* argv[])
     for (int i = 0; i < nrThreads; i++) {
       std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work << " w/s: " << stats[i].num_work / stats[i].num_sleeps
         << " avg. work_time: " <<
-        stats[i].work_time / (1000.0 * stats[i].num_work) << "ns avg. w/s: "
+        stats[i].work_time / (1000.0 * stats[i].num_work) << "ms avg. w/s: "
         << (int) (1000000000.0 * stats[i].num_work / stats[i].work_time) <<  std::endl;
       totalTime += stats[i].work_time;
       totalWork += stats[i].num_work;

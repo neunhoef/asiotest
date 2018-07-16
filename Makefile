@@ -49,7 +49,7 @@ client4-ssl: client4-ssl.cpp Makefile
 server-generic: server-generic.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h adv-worker-farm.hpp
 	g++ ${CPPFLAGS} -o server-generic server-generic.cpp -std=c++11 -lpthread -I asio/asio/include
 
-server-generic2: server-generic2.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h
+server-generic2: server-generic2.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h adv-worker-farm.hpp
 	g++ ${CPPFLAGS} -o server-generic2 server-generic2.cpp -std=c++11 -lpthread -I asio/asio/include
 
 server-generic2-ssl: server-generic2-ssl.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h
