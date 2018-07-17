@@ -1,6 +1,8 @@
 #ifndef ADV_WORK_H
 #define ADV_WORK_H
 
+uint64_t post_time_counter[32];
+
 class AdvancedWork : public Work
 {
 public:
@@ -48,7 +50,20 @@ public:
       start = std::chrono::high_resolution_clock::now();
       completion_(shared, request_size + sizeof(uint32_t));
       end = std::chrono::high_resolution_clock::now();
-      stat.post_time += std::chrono::nanoseconds(end - start).count();
+
+      uint64_t time = std::chrono::nanoseconds(end - start).count(), level = 1000000000;
+
+      for (int i = 0; i < 32; i++)
+      {
+        if (time > level) {
+          post_time_counter[i]++;
+          break ;
+        }
+
+        level /= 2;
+      }
+
+      stat.post_time += time;
     }
 
     void doit()

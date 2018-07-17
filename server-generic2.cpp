@@ -263,6 +263,8 @@ int main(int argc, char* argv[])
 
     std::srand(std::time(nullptr));
 
+    memset(post_time_counter, 0, sizeof(post_time_counter));
+
     int impl = std::atoi(argv[5]);
     int port = std::atoi(argv[1]);
     int nrIOThreads = std::atoi(argv[2]);
@@ -380,6 +382,17 @@ int main(int argc, char* argv[])
         StdWorkerFarm *stdWorkerFarm = (StdWorkerFarm*) workerFarm;
 
         std::cout<<"Max. Queue Length: "<<stdWorkerFarm->_queueMaxLength<<std::endl;
+      }
+
+      std::cout<<"post() wait times:"<<std::endl;
+      uint64_t time = 1000000000;
+      for (int i = 0; i < 32; i++) {
+        std::cout<<prettyTime(time)<<": "<<post_time_counter[i]<<std::endl;
+        time /= 2;
+
+        if (time == 0) {
+          break ;
+        }
       }
     } else {
       std::cout<<"No work stat. available."<<std::endl;

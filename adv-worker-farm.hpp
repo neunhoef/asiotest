@@ -424,11 +424,6 @@ protected:
         break ;
       }
 
-
-      // since a wait for 0 secs does not make any sense, use it to encode indefinite
-      // wait time
-
-
       if (cfg.sleep_timeout_ms == 0) {
         condition_work_.wait(guard);
       } else {
