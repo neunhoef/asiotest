@@ -1,7 +1,6 @@
 #!/bin/bash
 
 
-for i in {1..801..10}; do
-    echo ./client2 $1 $2 10000 $i 60
-    ./client2 $1 $2 10000 $i 60 | grep Reqs/s
+for i in {1..20}; do
+    ./client4 $1 $2  50000 $i 1 60 20 1 | grep Reqs/s
 done

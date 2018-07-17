@@ -1,5 +1,6 @@
 #ifndef ADVANCED_WORKER_FARM_H
 #define ADVANCED_WORKER_FARM_H
+#include <list>
 #include <boost/lockfree/queue.hpp>
 #include "worker_farm.h"
 
@@ -34,7 +35,9 @@ protected:
 
   std::vector<worker_configuration> worker_cfg_;
   std::mutex worker_cfg_mutex_;
-  size_t max_worker_cnt, worker_cnt_;
+  size_t max_worker_cnt_;
+
+  std::atomic<size_t> worker_cnt_;
 
   std::atomic<bool> should_stop_;
   std::atomic<bool> stop_when_done_;
@@ -46,7 +49,7 @@ public:
     wakeup_time_ns_(1000),
     definitive_wakeup_time_ns_(100000),
     worker_cfg_(max_worker_cnt),
-    max_worker_cnt(max_worker_cnt),
+    max_worker_cnt_(max_worker_cnt),
     worker_cnt_(0)
   {}
 
@@ -100,7 +103,7 @@ public:
     condition_work_.notify_all();
   }
 
-  void run(WorkerStat &stat)
+  virtual void run(WorkerStat &stat)
   {
     uint64_t id;
 
@@ -111,24 +114,21 @@ public:
     Work *work;
 
     while (get_work(id, work, stat)) {
-      stat.num_work++;
-      auto start = std::chrono::high_resolution_clock::now();
-      work->doit();
-      auto end = std::chrono::high_resolution_clock::now();
-      stat.work_time += std::chrono::nanoseconds(end - start).count();
+      work->doit_stat(stat);
       jobs_done_.fetch_add(1, std::memory_order_release);
+
+      delete work;
     }
   }
 
   virtual void run_supervisor() = 0;
 
-private:
-
-  bool worker_init (uint64_t &id)
+protected:
+  virtual bool worker_init (uint64_t &id)
   {
     std::lock_guard<std::mutex> guard(worker_cfg_mutex_);
 
-    if (worker_cnt_ >= max_worker_cnt) {
+    if (worker_cnt_ >= max_worker_cnt_) {
       return false;
     }
 
@@ -136,7 +136,7 @@ private:
     return true;
   }
 
-  bool get_work(uint64_t id, Work *&work, WorkerStat &stat)
+  virtual bool get_work(uint64_t id, Work *&work, WorkerStat &stat)
   {
     std::cv_status cv_status = std::cv_status::no_timeout;
 
@@ -220,5 +220,246 @@ public:
   }
 };
 
+class AdvCleverWorkerFarm : public AdvWorkerFarm
+{
+private:
+  // number of worker, that should sleep and not be terminated
+  size_t idle_worker_cnt_;
+
+  std::atomic<bool> stop_supervisor_;
+  std::atomic<uint64_t> lowest_stop_id_;
+
+  std::list<std::thread> threads_;
+
+  std::mutex supervisor_mutex_;
+  std::condition_variable condition_notify_supervisor_;
+public:
+  AdvCleverWorkerFarm(size_t queue_size, size_t max_worker_cnt, size_t idle_worker_cnt) :
+    AdvWorkerFarm(queue_size, max_worker_cnt),
+    idle_worker_cnt_(idle_worker_cnt),
+    stop_supervisor_(false)
+  {}
+
+  ~AdvCleverWorkerFarm() {}
+
+  virtual void run(WorkerStat &stat)
+  {
+    throw 0;
+  }
+
+  virtual void stopWhenDone()
+  {
+    std::lock_guard<std::mutex> guard(supervisor_mutex_);
+    stop_supervisor_.store(true);
+    condition_notify_supervisor_.notify_all();
+    AdvWorkerFarm::stopWhenDone();
+  }
+
+  virtual void stop()
+  {
+    std::lock_guard<std::mutex> guard(supervisor_mutex_);
+    stop_supervisor_.store(true);
+    condition_notify_supervisor_.notify_all();
+    AdvWorkerFarm::stop();
+  }
+
+  void run_supervisor()
+  {
+    pthread_setname_np(pthread_self(), "server-sv");
+    // Initialise everything
+    wakeup_queue_length = 5;
+    wakeup_time_ns_ = 300000;
+    definitive_wakeup_time_ns_ = 61803300;
+
+    for (size_t i = 0; i < worker_cfg_.size(); i++) {
+      worker_cfg_[i].queue_retry_cnt = 100;
+      worker_cfg_[i].sleep_timeout_ms = 97 + i;
+    }
+
+    while (worker_cnt_ < idle_worker_cnt_ && worker_cnt_ < max_worker_cnt_) {
+      start_new_thread();
+    }
+
+
+    /*
+     *  Compute jobs done per sv tick. Test if the current jobs/s is enough
+     *  to work on all jobs in at most 4 ticks. If not, start another thread.
+     *
+     *
+     */
+
+
+    int jobs_stalling_tick = 0, queue_length_dt_tick = 0;
+    uint64_t last_jobs_done = 0, jobs_done;
+    uint64_t last_jobs_submitted = 0, jobs_submitted;
+    uint64_t last_queue_length = 0, queue_length, queue_length_dt;
+
+    while (!stop_supervisor_) {
+
+      jobs_done = jobs_done_.load(std::memory_order_acquire);
+      jobs_submitted = jobs_submitted_.load(std::memory_order_relaxed);
+
+
+      if (jobs_done == last_jobs_done && (jobs_done < jobs_submitted)) {
+        jobs_stalling_tick++;
+      } else {
+        jobs_stalling_tick = jobs_stalling_tick == 0 ? 0 : jobs_stalling_tick - 1;
+      }
+
+      queue_length = jobs_submitted - jobs_done;
+
+      queue_length_dt = (queue_length - last_queue_length) / 10;
+
+
+      if (queue_length_dt > 100) {
+        queue_length_dt_tick++;
+      } else {
+        queue_length_dt_tick--;
+        if (queue_length_dt_tick < 0) {
+          queue_length_dt_tick = 0;
+        }
+      }
+
+
+
+      last_jobs_done = jobs_done;
+      //last_jobs_submitted = jobs_submitted;
+      //last_queue_length = queue_length;
+
+      bool do_start_new_thread = (jobs_stalling_tick > 5);
+
+      bool do_stop_one_thread = (queue_length == 0);
+
+      if (do_start_new_thread && worker_cnt_ < max_worker_cnt_) {
+
+        jobs_stalling_tick = 0;
+        queue_length_dt_tick = 0;
+
+        start_new_thread();
+
+      } else if (do_stop_one_thread && worker_cnt_ > idle_worker_cnt_) {
+        stop_one_thread();
+      }
+
+      if (stop_supervisor_) {
+        break ;
+      }
+
+      std::unique_lock<std::mutex> guard(supervisor_mutex_);
+      auto status = condition_notify_supervisor_.wait_for(guard, std::chrono::milliseconds(10));
+
+      if (status != std::cv_status::timeout) {
+        break ;
+      }
+    }
+  }
+
+protected:
+  void start_new_thread()
+  {
+    std::cout<<"SV: Starting new thread"<<std::endl;
+
+    std::unique_lock<std::mutex> guard(supervisor_mutex_);
+    lowest_stop_id_ += 1;
+
+    threads_.emplace_back([this]() {
+      this->run_internal();
+    });
+
+    // wait for the new thread to be fully functional
+    condition_notify_supervisor_.wait(guard);
+    std::cout<<"SV: Thread active"<<std::endl;
+  }
+
+  void stop_one_thread()
+  {
+    std::cout<<"SV: stoping thread"<<std::endl;
+    {
+      std::unique_lock<std::mutex> guard(mutex_);
+      lowest_stop_id_ -= 1;
+      condition_work_.notify_all();
+    }
+    threads_.back().join();
+    threads_.pop_back();
+    std::cout<<"SV: thread stoped"<<std::endl;
+  }
+
+  bool worker_init_internal(uint64_t &id)
+  {
+    std::lock_guard<std::mutex> guard(supervisor_mutex_);
+    pthread_setname_np(pthread_self(), "server-worker");
+
+    bool success = worker_init (id);
+
+    std::cout<<"New thread "<<id<<std::endl;
+
+    condition_notify_supervisor_.notify_one();
+    return success;
+  }
+
+  virtual bool get_work(uint64_t id, Work *&work)
+  {
+    while (!should_stop_.load(std::memory_order_relaxed) && id < lowest_stop_id_)
+    {
+      worker_configuration &cfg = worker_cfg_[id];
+
+      uint64_t tries_count = 0;
+
+      while (tries_count < cfg.queue_retry_cnt)
+      {
+        if (queue_.pop(work)) {
+          return true;
+        }
+
+        tries_count++;
+        if (tries_count < cfg.queue_retry_cnt - 1) {
+          cpu_relax();
+        }
+      }
+
+      // now go to sleep
+      std::unique_lock<std::mutex> guard(mutex_);
+
+      if (stop_when_done_ || should_stop_ || id >= lowest_stop_id_) {
+        break ;
+      }
+
+
+      // since a wait for 0 secs does not make any sense, use it to encode indefinite
+      // wait time
+
+
+      if (cfg.sleep_timeout_ms == 0) {
+        condition_work_.wait(guard);
+      } else {
+        condition_work_.wait_for(guard, std::chrono::milliseconds(cfg.sleep_timeout_ms));
+      }
+    }
+
+    return false;
+  }
+
+  void run_internal()
+  {
+    uint64_t id;
+
+    if(!worker_init_internal(id)) {
+      return ;
+    }
+
+    Work *work;
+
+    while (get_work(id, work)) {
+      work->doit();
+      jobs_done_.fetch_add(1, std::memory_order_release);
+
+      delete work;
+    }
+
+    worker_cnt_--;
+
+    std::cout<<id<<": Thread ended"<<std::endl;
+  }
+};
 
 #endif

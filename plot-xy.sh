@@ -2,7 +2,7 @@
 
 
 gnuplot -p <<EOF
-plot "$1" using 2 title 'WorkQueue' with lines
+plot "submit_times.txt" using 0 title 'SubmitTimes' with lines
 EOF
 gnuplot -p <<EOF
 plot "$1" using 3 title 'SuspendQueue' with lines

@@ -11,6 +11,7 @@ struct WorkerStat {
 
   uint64_t work_time;
   uint64_t num_work;
+  uint64_t post_time;
 
   cacheline_pad_t pad_1;
 
@@ -19,6 +20,7 @@ struct WorkerStat {
 
 struct Work {
   virtual ~Work() {};
+  virtual void doit_stat(WorkerStat &stat) = 0;
   virtual void doit() = 0;
 };
 
@@ -48,6 +50,18 @@ class CountWork : public Work {
   void doit() override final {
     result = delayRunner(delay_);
     completion_();
+  }
+
+  void doit_stat(WorkerStat &stat) override final {
+    auto t1 = std::chrono::high_resolution_clock::now();
+    result = delayRunner(delay_);
+    auto t2 = std::chrono::high_resolution_clock::now();
+    completion_();
+    auto t3 = std::chrono::high_resolution_clock::now();
+
+    stat.num_work++;
+    stat.work_time += std::chrono::nanoseconds(t2 - t1).count();
+    stat.post_time += std::chrono::nanoseconds(t3 - t2).count();
   }
 
  private:

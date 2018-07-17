@@ -26,62 +26,16 @@
 #include "fire_forget_worker_farm.hpp"
 #include "buffer_holder.hpp"
 //#include "smart_buffer.hpp"
+uint64_t globalDelay = 0;
+
+#include "adv-work.hpp"
 
 using asio::ip::tcp;
 
 WorkerFarm *workerFarm;
 
-uint64_t globalDelay = 0;
+
 typedef asio::ssl::stream<asio::ip::tcp::socket> ssl_socket;
-
-class AdvancedWork : public Work
-{
-public:
-  typedef std::function<void(std::shared_ptr<BufferHolder>, size_t)> on_completion_cb_t;
-
-
-
-  std::shared_ptr<BufferHolder> request_buffer;
-  size_t request_size, request_offset;
-
-  on_completion_cb_t completion_;
-
-  public:
-    AdvancedWork (std::shared_ptr<BufferHolder> request, size_t request_offset,
-      size_t request_size, on_completion_cb_t completion) :
-      request_buffer(request), request_size(request_size), request_offset(request_offset), completion_(completion) {}
-
-    void doit()
-    {
-      // parse the request
-      // create response
-      uint8_t *response = new uint8_t[request_size + sizeof(uint32_t)];
-
-      uint64_t delay = delayRunner(globalDelay);
-
-      uint64_t msg_id;
-      memcpy(&msg_id, request_buffer->get() + request_offset, sizeof(uint64_t));
-      //std::cout<<"Working "<<msg_id<<std::endl;
-
-      uint32_t request_size_32 = request_size;
-      memcpy (response, &request_size_32, sizeof(uint32_t));
-      memcpy (response + 3 * sizeof(uint32_t), &delay, sizeof(uint64_t));
-      memcpy (response + sizeof(uint32_t), request_buffer->get() + request_offset, request_size);
-
-      std::shared_ptr<BufferHolder> shared(new BufferHolder(response));
-
-      completion_(shared, request_size + sizeof(uint32_t));
-    }
-
-  private:
-  uint64_t delayRunner(uint64_t delay) {
-    uint64_t dummy_ = 0;
-    for (uint64_t i = 0; i < delay; ++i) {
-      dummy_ += i * i;
-    }
-    return dummy_;
-  }
-};
 
 class Connection : public std::enable_shared_from_this<Connection>
 {
@@ -547,10 +501,14 @@ int main(int argc, char* argv[])
 
     // Print worker statistics
     for (int i = 0; i < nrThreads; i++) {
-      std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work << " w/s: " << stats[i].num_work / stats[i].num_sleeps
-        << " avg. work_time: " <<
-        stats[i].work_time / (1000.0 * stats[i].num_work) << "ns avg. w/s: "
-        << (int) (1000000000.0 * stats[i].num_work / stats[i].work_time) <<  std::endl;
+      std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work;
+
+      if (stats[i].num_work != 0) {
+        std::cout<<" avg. work_time: " << stats[i].work_time / stats[i].num_work
+          << " avg. post() time: " << stats[i].post_time / stats[i].num_work;
+      }
+
+      std::cout <<  std::endl;
       totalTime += stats[i].work_time;
       totalWork += stats[i].num_work;
     }

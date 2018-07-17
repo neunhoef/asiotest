@@ -189,6 +189,7 @@ int main(int argc, char* argv[])
       << std::endl;
 
     std::vector<std::thread> threads;
+    bool spawns_own_threads = false;
 
     switch (impl)
     {
@@ -240,23 +241,25 @@ int main(int argc, char* argv[])
       threads.emplace_back([&io_contexts, i]() { pthread_setname_np(pthread_self(), "server-io"); io_contexts[i]->run(); });
     }
 
+
     std::vector<WorkerStat> stats(nrThreads);
-    for (int i = 0; i < nrThreads; ++i) {
-      threads.emplace_back([i, &stats]() { pthread_setname_np(pthread_self(), "server-worker"); workerFarm->run(stats[i]); });
+    if (!spawns_own_threads) {
+      for (int i = 0; i < nrThreads; ++i) {
+        threads.emplace_back([i, &stats]() { pthread_setname_np(pthread_self(), "server-worker"); workerFarm->run(stats[i]); });
+      }
     }
+
 
     std::cout<<"Server up."<<std::endl;
     auto startTime = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 
     io_contexts[0]->run();   // Start accepting
+    workerFarm->stop();
 
     // wait for the IO threads to finish their job
     for (int i = 0; i < nrIOThreads - 1; ++i) {
       threads[i].join();
     }
-
-    std::cout<<"IO Threads done. Wait for farm."<<std::endl;
-    workerFarm->stop();
 
     // now wait for the worker threads to end
     for (size_t i = nrIOThreads - 1; i < threads.size(); ++i) {
@@ -267,21 +270,25 @@ int main(int argc, char* argv[])
     double totalWork = 0;
 
     // Print worker statistics
-    for (int i = 0; i < nrThreads; i++) {
-      std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work << " w/s: " << stats[i].num_work / stats[i].num_sleeps
-        << " avg. work_time: " <<
-        stats[i].work_time / (1000.0 * stats[i].num_work) << "ns avg. w/s: "
-        << (int) (1000000000.0 * stats[i].num_work / stats[i].work_time) <<  std::endl;
-      totalTime += stats[i].work_time;
-      totalWork += stats[i].num_work;
-    }
+    if (!spawns_own_threads) {
+      for (int i = 0; i < nrThreads; i++) {
+        std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work << " w/s: " << stats[i].num_work / stats[i].num_sleeps
+          << " avg. work_time: " <<
+          stats[i].work_time / (1000.0 * stats[i].num_work) << "ns avg. w/s: "
+          << (int) (1000000000.0 * stats[i].num_work / stats[i].work_time) <<  std::endl;
+        totalTime += stats[i].work_time;
+        totalWork += stats[i].num_work;
+      }
 
-    std::cout<<"Avg. Work: "<<  totalWork / nrThreads << " Work/Sec: "<< 1000000000 * totalWork / ( totalTime / nrThreads) <<std::endl;
+      std::cout<<"Avg. Work: "<<  totalWork / nrThreads << " Work/Sec: "<< 1000000000 * totalWork / ( totalTime / nrThreads) <<std::endl;
 
-    if (impl == impl_std_mutex) {
-      StdWorkerFarm *stdWorkerFarm = (StdWorkerFarm*) workerFarm;
+      if (impl == impl_std_mutex) {
+        StdWorkerFarm *stdWorkerFarm = (StdWorkerFarm*) workerFarm;
 
-      std::cout<<"Max. Queue Length: "<<stdWorkerFarm->_queueMaxLength<<std::endl;
+        std::cout<<"Max. Queue Length: "<<stdWorkerFarm->_queueMaxLength<<std::endl;
+      }
+    } else {
+      std::cout<<"No work stat. available."<<std::endl;
     }
 
     delete workerFarm;
