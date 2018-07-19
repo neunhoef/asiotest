@@ -51,14 +51,18 @@ class Connection : public std::enable_shared_from_this<Connection>
   size_t recv_buffer_read_offset;
 
 
+  boost::lockfree::queue<std::shared_ptr<BufferHolder>> write_queue_;
+  std::atomic<uint64_t> write_queue_length_;
+  bool io_thread_writing;
+
 public:
   Connection(tcp::socket socket, std::shared_ptr<std::atomic<uint32_t>> counter)
     : socket_(std::move(socket)), context_(socket_.get_io_context()),
-    counter_(counter) {
+    counter_(counter), write_queue_(1000), io_thread_writing(false) {
   }
 
   void start() {
-    recv_buffer.reset(new BufferHolder(new uint8_t[2048]));
+    recv_buffer.reset(new BufferHolder(new uint8_t[2048], 2048));
     recv_buffer_size            = 2048;
     recv_buffer_write_offset    = 0;
     recv_buffer_read_offset     = 0;
@@ -82,7 +86,7 @@ public:
       size_t bytes_to_copy = recv_buffer_write_offset - recv_buffer_read_offset;
       memcpy (new_buffer, recv_buffer->get() + recv_buffer_read_offset, bytes_to_copy);
 
-      recv_buffer.reset(new BufferHolder(new_buffer));
+      recv_buffer.reset(new BufferHolder(new_buffer, new_size));
       recv_buffer_read_offset   = 0;
       recv_buffer_write_offset  = bytes_to_copy;
       recv_buffer_size          = new_size;
@@ -124,7 +128,7 @@ public:
 
             // pass the message to the worker
             AdvancedWork *work = new AdvancedWork(recv_buffer, recv_buffer_read_offset, recv_msg_size,
-              [this, self] (std::shared_ptr<BufferHolder> response, size_t response_size) { this->do_write(response, response_size); });
+              [this, self] (std::shared_ptr<BufferHolder> response, size_t response_size) { this->post_response(response, response_size); });
             workerFarm->submit(work);
 
             recv_buffer_read_offset += recv_msg_size;
@@ -165,6 +169,15 @@ public:
 
 
 
+  void post_response (std::shared_ptr<BufferHolder> response, size_t response_size)
+  {
+    auto buffer = std::make_pair(response, response_size);
+
+    write_queue_.push (std::move(buffer));
+  }
+
+
+
 
   void do_write(std::shared_ptr<BufferHolder> response, size_t response_size) {
     // Note that this is typically called by a thread that is not in a
@@ -174,9 +187,9 @@ public:
     auto self(shared_from_this());
 
     context_.post(
-      [this, self, response, response_size]() {
+      [this, self, response]() {
         auto self_io(shared_from_this());
-        asio::async_write(socket_, asio::buffer(response->get(), response_size),
+        asio::async_write(socket_, asio::buffer(response->get(), response->size()),
           [this, self_io](std::error_code ec, std::size_t length) {
             if (ec) {
               (*counter_)--;

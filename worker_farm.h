@@ -20,7 +20,6 @@ struct WorkerStat {
 
 struct Work {
   virtual ~Work() {};
-  virtual void doit_stat(WorkerStat &stat) = 0;
   virtual void doit() = 0;
 };
 
@@ -52,7 +51,7 @@ class CountWork : public Work {
     completion_();
   }
 
-  void doit_stat(WorkerStat &stat) override final {
+  void doit_stat(WorkerStat &stat) {
     auto t1 = std::chrono::high_resolution_clock::now();
     result = delayRunner(delay_);
     auto t2 = std::chrono::high_resolution_clock::now();

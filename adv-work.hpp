@@ -16,7 +16,7 @@ public:
   on_completion_cb_t completion_;
 
   public:
-    AdvancedWork (std::shared_ptr<BufferHolder> request, size_t request_offset,
+    AdvancedWork (std::shared_ptr<BufferHolder> &request, size_t request_offset,
       size_t request_size, on_completion_cb_t completion) :
       request_buffer(request), request_size(request_size), request_offset(request_offset), completion_(completion) {}
 

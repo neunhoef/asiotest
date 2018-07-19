@@ -1,6 +1,7 @@
 all: asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 \
-	server3 server4 calibrate worker_test server3-lf eponeshots server-generic client4 server-generic2 \
-	client4-ssl server-generic2-ssl
+	server3 server4 calibrate worker_test server3-lf eponeshots server-generic client4  \
+	client4-ssl server-final
+#server-generic2-ssl server-generic2
 
 CPPFLAGS = -Wall -O3 -g -march=native -DASIO_DISABLE_NOEXCEPT
 #CPPFLAGS = -Wall -O0 -g
@@ -49,11 +50,14 @@ client4-ssl: client4-ssl.cpp Makefile
 server-generic: server-generic.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h adv-worker-farm.hpp
 	g++ ${CPPFLAGS} -o server-generic server-generic.cpp -std=c++11 -lpthread -I asio/asio/include
 
-server-generic2: server-generic2.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h adv-worker-farm.hpp
-	g++ ${CPPFLAGS} -o server-generic2 server-generic2.cpp -std=c++11 -lpthread -I asio/asio/include
+#server-generic2: server-generic2.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h adv-worker-farm.hpp
+#	g++ ${CPPFLAGS} -o server-generic2 server-generic2.cpp -std=c++11 -lpthread -I asio/asio/include
 
-server-generic2-ssl: server-generic2-ssl.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h
-	g++ ${CPPFLAGS} -o server-generic2-ssl server-generic2-ssl.cpp -std=c++11 -lpthread -I asio/asio/include -lssl -lcrypto
+server-final: server-final.cpp Makefile worker_farm.h adv-worker-farm.hpp
+	g++ ${CPPFLAGS} -o server-final server-final.cpp -std=c++11 -lpthread -I asio/asio/include -lssl -lcrypto
+
+#server-generic2-ssl: server-generic2-ssl.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h
+#	g++ ${CPPFLAGS} -o server-generic2-ssl server-generic2-ssl.cpp -std=c++11 -lpthread -I asio/asio/include -lssl -lcrypto
 
 eponeshots: epoll_oneshot_server.c Makefile
 	gcc -O3 -march=native -o eponeshots epoll_oneshot_server.c -lpthread
@@ -72,5 +76,5 @@ getasio:
 
 clean:
 	rm -rf asio_server asio_client asio_server_varlen asio_client_varlen client server client2 server2 \
-	server3 server4 calibrate worker_test server3-lf eponeshots server-generic client4 server-generic2 \
-	client4-ssl server-generic2-ssl
+	server3 server4 calibrate worker_test server3-lf eponeshots server-generic client4 \
+	client4-ssl server-generic2-ssl server-final

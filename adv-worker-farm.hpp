@@ -45,12 +45,16 @@ protected:
 public:
   AdvWorkerFarm(size_t queue_size, size_t max_worker_cnt) :
     queue_(queue_size),
+    jobs_submitted_(0),
+    jobs_done_(0),
     wakeup_queue_length(5),
     wakeup_time_ns_(1000),
     definitive_wakeup_time_ns_(100000),
     worker_cfg_(max_worker_cnt),
     max_worker_cnt_(max_worker_cnt),
-    worker_cnt_(0)
+    worker_cnt_(0),
+    should_stop_(false),
+    stop_when_done_(false)
   {}
 
 
@@ -114,7 +118,7 @@ public:
     Work *work;
 
     while (get_work(id, work, stat)) {
-      work->doit_stat(stat);
+      work->doit();
       jobs_done_.fetch_add(1, std::memory_order_release);
 
       delete work;
@@ -230,6 +234,7 @@ private:
   std::atomic<uint64_t> lowest_stop_id_;
 
   std::list<std::thread> threads_;
+  std::thread supervisor_;
 
   std::mutex supervisor_mutex_;
   std::condition_variable condition_notify_supervisor_;
@@ -237,7 +242,9 @@ public:
   AdvCleverWorkerFarm(size_t queue_size, size_t max_worker_cnt, size_t idle_worker_cnt) :
     AdvWorkerFarm(queue_size, max_worker_cnt),
     idle_worker_cnt_(idle_worker_cnt),
-    stop_supervisor_(false)
+    stop_supervisor_(false),
+    lowest_stop_id_(0),
+    supervisor_([this](){ this->run_supervisor(); })
   {}
 
   ~AdvCleverWorkerFarm() {}
@@ -257,10 +264,18 @@ public:
 
   virtual void stop()
   {
-    std::lock_guard<std::mutex> guard(supervisor_mutex_);
+    std::unique_lock<std::mutex> guard(supervisor_mutex_);
     stop_supervisor_.store(true);
     condition_notify_supervisor_.notify_all();
+    guard.unlock();
+
+    supervisor_.join();
+
     AdvWorkerFarm::stop();
+
+    for (auto &thrd : threads_) {
+      thrd.join();
+    }
   }
 
   void run_supervisor()
@@ -291,7 +306,7 @@ public:
 
     int jobs_stalling_tick = 0, queue_length_dt_tick = 0;
     uint64_t last_jobs_done = 0, jobs_done;
-    uint64_t last_jobs_submitted = 0, jobs_submitted;
+    uint64_t /*last_jobs_submitted = 0,*/ jobs_submitted;
     uint64_t last_queue_length = 0, queue_length, queue_length_dt;
 
     while (!stop_supervisor_) {
@@ -452,8 +467,6 @@ protected:
     }
 
     worker_cnt_--;
-
-    std::cout<<id<<": Thread ended"<<std::endl;
   }
 };
 
