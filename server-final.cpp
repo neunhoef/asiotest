@@ -16,6 +16,8 @@
 #include "asio.hpp"
 #include "asio/ssl.hpp"
 
+#include "pretty-time.hpp"
+
 inline void cpu_relax() {
 // TODO use <boost/fiber/detail/cpu_relax.hpp> when available (>1.65.0?)
 #if defined(__i386) || defined(_M_IX86) || defined(__x86_64__) || \
@@ -31,9 +33,17 @@ inline void cpu_relax() {
 #endif
 }
 
+static
+void set_thread_name (const char *name) {
+  pthread_setname_np(pthread_self(), name);
+}
+
+
 #include "adv-worker-farm.hpp"
+#include "best-worker-farm.hpp"
 
 
+std::atomic<uint64_t> post_time_counter [32];
 
 using asio::ip::tcp;
 
@@ -249,7 +259,7 @@ class server {
       work_(asio_ioctx_),
       clients_(0),
       thread_([this](){
-        pthread_setname_np(pthread_self(), "server-io");
+        set_thread_name("server-io");
         asio_ioctx_.run();
       })
     {}
@@ -321,7 +331,21 @@ class server {
 
         server_.workerfarm_->submit(
           new AdvancedWork(view, [this, self2](membuffer *response) {
+            auto start = std::chrono::high_resolution_clock::now();
             this->post_response(response);
+            auto end = std::chrono::high_resolution_clock::now();
+
+            uint64_t time = std::chrono::nanoseconds(end - start).count(), level = 1000000000;
+
+            for (int i = 0; i < 32; i++)
+            {
+              if (time > level) {
+                post_time_counter[i].fetch_add(1, std::memory_order_relaxed);
+                break ;
+              }
+
+              level /= 2;
+            }
           })
         );
       });
@@ -513,6 +537,10 @@ int main(int argc, char* argv[])
       << "Worker:         " << num_idle_worker << " upto " << num_max_worker << std::endl
       << "Sim. workload:  " << globalDelay << std::endl;
 
+    for (int i = 0; i < 32; i++) {
+      post_time_counter[i] = 0;
+    }
+
     asio::ssl::context ssl_context(asio::ssl::context::sslv23);
 
     if (ssl) {
@@ -542,6 +570,17 @@ int main(int argc, char* argv[])
     s.join();
     workerFarm.stop();
     std::cout<<"Server terminated"<<std::endl;
+
+    std::cout<<"post() wait times:"<<std::endl;
+    uint64_t time = 1000000000;
+    for (int i = 0; i < 32; i++) {
+      std::cout<<prettyTime(time)<<": "<<post_time_counter[i]<<std::endl;
+      time /= 2;
+
+      if (time == 0) {
+        break ;
+      }
+    }
 
   }
   catch (std::exception& e) {
