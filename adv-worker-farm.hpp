@@ -337,13 +337,15 @@ public:
 
 
 
-      last_jobs_done = jobs_done;
-      //last_jobs_submitted = jobs_submitted;
-      //last_queue_length = queue_length;
 
-      bool do_start_new_thread = (jobs_stalling_tick > 5);
+      bool do_start_new_thread = (jobs_stalling_tick > 5) || ((queue_length >= 50 ) && (1.5 * last_queue_length >= queue_length));
 
       bool do_stop_one_thread = (queue_length == 0);
+
+      last_jobs_done = jobs_done;
+      //last_jobs_submitted = jobs_submitted;
+      last_queue_length = queue_length;
+
 
       if (do_start_new_thread && worker_cnt_ < max_worker_cnt_) {
 
