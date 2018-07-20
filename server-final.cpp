@@ -166,6 +166,7 @@ private:
     {
       // reallocation required
       size_t new_size = std::max(2048ul, required_size + 1024);
+      // MAX: Vielleicht ist 1024 hier etwas klein in der Praxis.
       uint8_t *new_buffer = new uint8_t[new_size];
 
 
@@ -273,6 +274,7 @@ class server {
     }
 
     void post(std::function<void()> cb) {
+      // MAX: This argument could be a reference, saving one copy
       asio_ioctx_.post(std::move(cb));
     }
   };
@@ -289,6 +291,8 @@ class server {
     virtual S& lowest_layer() = 0;
   };
 
+  // MAX: Wozu braucht man hier zwei template Klassen connection und
+  // typed_connection?
   template <typename T>
   class typed_connection :
     public connection<typename T::lowest_layer_type>
@@ -308,7 +312,7 @@ class server {
     socket_reader<T, connection<typename T::lowest_layer_type>> reader_;
 
 
-   public:
+  public:
     template <typename... SocketArgs>
     typed_connection(io_context_t &io_context, server &server, SocketArgs&&... args) :
       io_context_(io_context),
@@ -327,6 +331,7 @@ class server {
       auto self(this->shared_from_this());
 
       reader_.do_read_socket(self, [this, self](std::shared_ptr<membuffer::view> view) {
+        // MAX: Could the view argument here also be a reference?
         auto self2(this->shared_from_this());
 
         server_.workerfarm_->submit(
