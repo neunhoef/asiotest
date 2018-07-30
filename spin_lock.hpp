@@ -25,24 +25,29 @@ inline void cpu_relax() {
 #endif
 
 class spin_lock {
-    std::atomic_flag flag;
+    std::atomic<bool> flag;
 
 public:
-    spin_lock() : flag(ATOMIC_FLAG_INIT) {}
+    spin_lock() : flag(false) {}
 
-    void get()
-    {
+    void get() {
         while (!try_lock()) {
           cpu_relax();
         }
     }
 
-    void release() {
-        flag.clear();
+    bool try_lock() {
+        if (flag.load(std::memory_order_relaxed) == false) {
+            bool expected = false;
+            // (1) - this acquire-compare-exchange synchronizes with the release-store (2)
+            return flag.compare_exchange_strong(expected, true, std::memory_order_acquire, std::memory_order_relaxed);
+        }
+        return false;
     }
 
-    bool try_lock() {
-        return !flag.test_and_set();
+    void release() {
+        // (2) - this release-store synchronizes with the acquire-compare-exchange (2)
+        flag.store(false, std::memory_order_release);
     }
 };
 #endif
