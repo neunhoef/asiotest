@@ -12,6 +12,8 @@
 #include <csignal>
 #include <algorithm>
 #include <fstream>
+#include <sstream>
+#include <iomanip>
 
 #include <boost/lockfree/queue.hpp>
 
@@ -22,16 +24,25 @@
 #include "lockfree_richard_worker_farm.h"
 #include "std_worker_farm.hpp"
 
-std::string prettyTime(uint64_t nanoseconds) {
+std::string prettyTime(uint64_t nanoseconds) {  
+  double val;
+  const char* unit;
   if (nanoseconds < 10000) {
-    return std::to_string(nanoseconds) + " ns";
+    val = nanoseconds;
+    unit = " ns";
   } else if (nanoseconds < 10000000) {
-    return std::to_string((nanoseconds / 10) / 100.0) + " us";
+    val = (nanoseconds / 10) / 100.0;
+    unit = " us";
   } else if (nanoseconds < 10000000000) {
-    return std::to_string((nanoseconds / 10000) / 100.0) + " ms";
+    val = (nanoseconds / 10000) / 100.0;
+    unit = " ms";
   } else {
-    return std::to_string((nanoseconds / 10000000) / 100.0) + " s";
+    val = (nanoseconds / 10000000) / 100.0;
+    unit = " s";
   }
+  std::ostringstream oss;
+  oss << std::setw(7) << std::setprecision(2) << std::fixed << val << " " << unit;
+  return oss.str();
 }
 
 struct IOStats
@@ -96,11 +107,11 @@ int main(int argc, char* argv[])
       threads.emplace_back([i, &stats, workerFarm]() { workerFarm->run(stats[i]); });
     }
 
-
     for (int i = 0; i < nrIOThreads; ++i) {
         threads.emplace_back([i, &iostats, workerFarm, globalDelay]() {
 
         IOStats &stat = iostats[i];
+        stat.submit_times.reserve(SUBMITS_PER_THREAD);
 
         auto run_start = std::chrono::high_resolution_clock::now();
 
@@ -122,14 +133,10 @@ int main(int argc, char* argv[])
             stat.submit_times.push_back(submit_time);
           }
 
-
           int64_t sleep_time = 20 * 10 - submit_time_acc / 1000;
           if (sleep_time > 0) {
             usleep(0);
           }
-
-
-
         }
 
         auto run_end = std::chrono::high_resolution_clock::now();
@@ -156,27 +163,34 @@ int main(int argc, char* argv[])
     double totalWork = 0;
 
     // now aggregate the statistics
+    std::cout << "== Worker Threads ==" << std::endl;
     for (int i = 0; i < nrThreads; i++) {
-    	std::cout<< i << " sleeps: " << stats[i].num_sleeps << " work_num: " << stats[i].num_work << " work_time: " << stats[i].work_time << "ns avg. work_time: " <<
-    	 	stats[i].work_time / (1000.0 * stats[i].num_work) << "ns avg. w/s: "
-        << (int) (1000000000.0 * stats[i].num_work / stats[i].work_time) <<  std::endl;
-      totalTime += stats[i].work_time;
-      totalWork += stats[i].num_work;
+      auto& stat = stats[i];
+    	std::cout << i <<
+        "\tjobs:   "          << std::setw(7) << stat.num_work <<
+        "\twork_time:  "      << prettyTime(stat.work_time) <<
+        "\tavg. work_time:  " << prettyTime(stat.work_time / stat.num_work) <<
+        "\tavg. w/s: "        << (int) (1000000000.0 * stat.num_work / stat.work_time) <<
+        "\n\tsleeps: "        << std::setw(7) << stat.num_sleeps <<
+        "\tsleep_time: "      << prettyTime(stat.sleep_time) <<
+        "\tavg. sleep_time: " << prettyTime(stat.sleep_time / stat.num_sleeps) << std::endl;
+      totalTime += stat.work_time;
+      totalWork += stat.num_work;
     }
 
-    std::cout<<"Avg. Work: "<<  totalWork / nrThreads << " Work/Sec: "<< 1000000000 * totalWork / ( totalTime / nrThreads) <<std::endl;
+    std::cout << "Avg. Work: " << totalWork / nrThreads <<
+      "\tWork/Sec: " << 1000000000 * totalWork / (totalTime / nrThreads) << std::endl;
 
-
+    std::cout << "== IO Threads ==" << std::endl;
     for (int i = 0; i < nrIOThreads; i++) {
-      std::cout<< i << " num_submits: " << iostats[i].num_submits << " avg. submit_time: " <<
-        prettyTime(iostats[i].submit_time / iostats[i].num_submits) << " avg. time/submit:" <<
-        iostats[i].run_time / iostats[i].num_submits << "ns" << std::endl << "\t"
-          << "submit median: " << prettyTime(iostats[i].submit_times[SUBMITS_PER_THREAD/2])
-          << " submit 90%: " << prettyTime(iostats[i].submit_times[(SUBMITS_PER_THREAD*90)/100])
-          << " submit 99%: " << prettyTime(iostats[i].submit_times[(SUBMITS_PER_THREAD*99)/100])
-          << " submit 99.9%: " << prettyTime(iostats[i].submit_times[(SUBMITS_PER_THREAD*999)/1000])
-          << std::endl;
-        ;
+      std::cout << i <<
+        "\tsubmits: " << iostats[i].num_submits <<
+        "\tavg. submit_time: " << prettyTime(iostats[i].submit_time / iostats[i].num_submits) <<
+        "\tavg. time/submit:" << prettyTime(iostats[i].run_time / iostats[i].num_submits) <<
+        "\n\tsubmit median: " << prettyTime(iostats[i].submit_times[SUBMITS_PER_THREAD/2]) <<
+        "\tsubmit 90%: " << prettyTime(iostats[i].submit_times[(SUBMITS_PER_THREAD*90)/100]) <<
+        "\tsubmit 99%: " << prettyTime(iostats[i].submit_times[(SUBMITS_PER_THREAD*99)/100]) <<
+        "\tsubmit 99.9%: " << prettyTime(iostats[i].submit_times[(SUBMITS_PER_THREAD*999)/1000]) << std::endl;
     }
 
     delete workerFarm;
