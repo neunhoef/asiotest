@@ -81,20 +81,20 @@ int main(int argc, char* argv[])
     {
       case 1:
         std::cout<<"Testing using Richards impl. (with locks)"<<std::endl;
-        workerFarm = new RichardWorkerFarm(100000000);
+        workerFarm = new RichardWorkerFarm(10000000);
         break ;
       case 2:
         std::cout<<"Testing using Futex impl."<<std::endl;
-        workerFarm = new FutexWorkerFarm(100000000);
+        workerFarm = new FutexWorkerFarm(10000000);
         break ;
       case 3:
         std::cout<<"Testing using Richards impl. (lock free)"<<std::endl;
-        workerFarm = new LockfreeRichardWorkerFarm(100000000);
+        workerFarm = new LockfreeRichardWorkerFarm(10000000);
         break ;
       case 4:
       default:
         std::cout<<"Testing std. mutex worker farm"<<std::endl;
-        workerFarm = new StdWorkerFarm(100000000);
+        workerFarm = new StdWorkerFarm(10000000);
         break ;
     }
 
