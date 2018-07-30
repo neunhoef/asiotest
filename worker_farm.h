@@ -10,12 +10,13 @@ struct WorkerStat {
   uint64_t num_sleeps;
 
   uint64_t work_time;
+  uint64_t sleep_time;
   uint64_t num_work;
   uint64_t post_time;
 
   cacheline_pad_t pad_1;
 
-  WorkerStat() : num_sleeps(0), work_time(0), num_work(0) {}
+  WorkerStat() : num_sleeps(0), work_time(0), sleep_time(0), num_work(0) {}
 };
 
 struct Work {

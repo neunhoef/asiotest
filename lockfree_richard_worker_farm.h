@@ -152,7 +152,10 @@ public:
 
       auto sleeper = std::make_shared<Sleeper>();
       sleeperQueue_.push_back(sleeper);  // a copy of the shared_ptr
+      auto start = std::chrono::high_resolution_clock::now();
       sleeper->cond_.wait(guard);
+      auto end = std::chrono::high_resolution_clock::now();
+      stat.sleep_time += std::chrono::nanoseconds(end - start).count();
       nrThreadsAwake_++;
     }
 

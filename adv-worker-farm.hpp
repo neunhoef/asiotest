@@ -179,12 +179,15 @@ protected:
       // wait time
 
 
+      auto start = std::chrono::high_resolution_clock::now();      
       if (cfg.sleep_timeout_ms == 0) {
         condition_work_.wait(guard);
         cv_status = std::cv_status::no_timeout;
       } else {
         cv_status = condition_work_.wait_for(guard, std::chrono::milliseconds(cfg.sleep_timeout_ms));
       }
+      auto end = std::chrono::high_resolution_clock::now();
+      stat.sleep_time += std::chrono::nanoseconds(end - start).count();
     }
 
     return false;

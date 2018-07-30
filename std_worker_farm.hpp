@@ -130,13 +130,14 @@ private:
 
             if (STDWF_CNT_QUEUE_LEN(counter) == 0) {
                 stat.num_sleeps++;
-
+                auto start = std::chrono::high_resolution_clock::now();
                 if (STDWF_CNT_SLEEPING(counter) >= _numWorker.load(std::memory_order_relaxed)) {
                     _condition.wait_for(guard, std::chrono::milliseconds(100));
                 } else {
                     _condition.wait(guard);
                 }
-
+                auto end = std::chrono::high_resolution_clock::now();
+                stat.sleep_time += std::chrono::nanoseconds(end - start).count();
             }
 
             _counter.fetch_sub (STDWD_CNT_ONE_SLEEPER, std::memory_order_relaxed);

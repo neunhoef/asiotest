@@ -88,7 +88,7 @@ class FutexWorkerFarm : public WorkerFarm {
   void run(WorkerStat &stat) {
     nrThreadsInRun_++;
     while (true) {
-      Work* work = getWork();
+      Work* work = getWork(stat);
       if (work == nullptr || shouldStop_.load(std::memory_order_relaxed)) {
         delete work;
         break;
@@ -118,7 +118,7 @@ class FutexWorkerFarm : public WorkerFarm {
   }
 
  private:
-  Work* getWork() {
+  Work* getWork(WorkerStat &stat) {
     while (!shouldStop_.load(std::memory_order_relaxed))
     {
       const int max_tries = 3; // try a few times to fetch a job before going to sleep
@@ -141,7 +141,10 @@ class FutexWorkerFarm : public WorkerFarm {
       
       // (2) - the following seq-cst fetch-add ensures a total order with the seq-cst load (1)
       waiting_.fetch_add(1, std::memory_order_seq_cst);
+      auto start = std::chrono::high_resolution_clock::now();
       size_.wait(0);
+      auto end = std::chrono::high_resolution_clock::now();
+      stat.sleep_time += std::chrono::nanoseconds(end - start).count();
       waiting_.fetch_add(-1, std::memory_order_relaxed);
     }
     return nullptr;

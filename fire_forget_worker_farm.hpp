@@ -87,8 +87,11 @@ private:
 
             {
                 stat.num_sleeps++;
+                auto start = std::chrono::high_resolution_clock::now();
                 std::unique_lock<std::mutex> guard(_mutex);
                 _condition.wait_for(guard, std::chrono::milliseconds(10));
+                auto end = std::chrono::high_resolution_clock::now();
+                stat.sleep_time += std::chrono::nanoseconds(end - start).count();
             }
 
             _sleepy.store(false);
