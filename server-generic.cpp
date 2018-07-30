@@ -19,6 +19,7 @@
 #include "lockfree_richard_worker_farm.h"
 #include "std_worker_farm.hpp"
 #include "adv-worker-farm.hpp"
+#include "manuel-worker-farm.hpp"
 
 using asio::ip::tcp;
 
@@ -167,7 +168,8 @@ enum impl_enum {
   impl_futex = 2,
   impl_richard_lock_free = 3,
   impl_std_mutex = 4,
-  impl_adv = 5
+  impl_adv = 5,
+  impl_manuel = 6
 };
 
 int main(int argc, char* argv[])
@@ -208,6 +210,10 @@ int main(int argc, char* argv[])
       case impl_std_mutex:
         std::cout<<"Testing std. mutex worker farm"<<std::endl;
         workerFarm = new StdWorkerFarm(10000);
+        break ;
+      case impl_manuel:
+        std::cout<<"Testing Manuel worker farm"<<std::endl;
+        workerFarm = new ManuelWorkerFarm(nrThreads, 10000);
         break ;
       case impl_adv:
       default:

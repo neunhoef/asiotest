@@ -31,7 +31,7 @@ server3-lf: server3-lf.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h
 	g++ ${CPPFLAGS} -o server3-lf server3-lf.cpp -std=c++11 -lpthread -I asio/asio/include
 
 worker_test: worker_test.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h \
-	std_worker_farm.hpp
+	std_worker_farm.hpp manuel-worker-farm.hpp
 	g++ ${CPPFLAGS} -o worker_test worker_test.cpp -std=c++11 -lpthread
 
 client2: client2.cpp Makefile
@@ -47,7 +47,7 @@ client4-ssl: client4-ssl.cpp Makefile
 	g++ ${CPPFLAGS} -o client4-ssl client4-ssl.cpp -std=c++11 -lpthread -I asio/asio/include -lssl -lcrypto
 
 
-server-generic: server-generic.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h adv-worker-farm.hpp
+server-generic: server-generic.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h adv-worker-farm.hpp manuel-worker-farm.hpp
 	g++ ${CPPFLAGS} -o server-generic server-generic.cpp -std=c++11 -lpthread -I asio/asio/include
 
 #server-generic2: server-generic2.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h adv-worker-farm.hpp

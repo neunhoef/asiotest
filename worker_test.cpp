@@ -23,6 +23,7 @@
 #include "futex_worker_farm.h"
 #include "lockfree_richard_worker_farm.h"
 #include "std_worker_farm.hpp"
+#include "manuel-worker-farm.hpp"
 
 std::string prettyTime(uint64_t nanoseconds) {  
   double val;
@@ -67,7 +68,7 @@ int main(int argc, char* argv[])
 
     if (argc != 5) {
       std::cerr << "Usage: worker_test <nriothreads> <nrthreads> <workerdelay> <impl>\n"
-        << "Implementations: 1 - Richard, 2 - Futex (Manuel), 3 - Lockfree Richard, 4 - Std Lockfree\n";
+        << "Implementations: 1 - Richard, 2 - Futex (Manuel), 3 - Lockfree Richard, 4 - Std Lockfree, 5 - Manuel\n";
       return 1;
     }
 
@@ -95,6 +96,10 @@ int main(int argc, char* argv[])
       default:
         std::cout<<"Testing std. mutex worker farm"<<std::endl;
         workerFarm = new StdWorkerFarm(10000000);
+        break ;
+      case 5:
+        std::cout<<"Testing using Manuels impl."<<std::endl;
+        workerFarm = new ManuelWorkerFarm(nrThreads, 10000000);
         break ;
     }
 
