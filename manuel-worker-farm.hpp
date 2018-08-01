@@ -19,6 +19,9 @@ public:
   ManuelWorkerFarm(uint32_t maxWorkerThreads, uint32_t maxQueueLen) :
     maxQueueLen_(maxQueueLen),
     jobQueue_(maxQueueLen),
+    counters_(0),
+    shouldStop_(false),
+    stopWhenDone_(false),
     last_coordination_(Clock::now())
   {
     controlBlocks_.resize(maxWorkerThreads);
@@ -168,7 +171,7 @@ private:
           counters_.fetch_sub(QUEUED_JOB_INC, std::memory_order_relaxed);
           return work;
         }
-        
+
         if (i < max_tries - 1)
           cpu_relax();
       }
@@ -176,11 +179,14 @@ private:
       if (stopWhenDone_.load(std::memory_order_relaxed)) {
       	break ;
       }
-      
+
       std::unique_lock<std::mutex> guard(controlBlock.mutex);
       auto counters = counters_.fetch_sub(ACTIVE_WORKER_INC, std::memory_order_acquire);
       if (queuedJobs(counters) > 0) {
         counters_.fetch_add(ACTIVE_WORKER_INC, std::memory_order_relaxed);
+        if (controlBlock.id == 0) {
+          std::cout<<"Continue: "<< queuedJobs(counters)<<std::endl;
+        }
         continue;
       }
 
@@ -201,7 +207,7 @@ private:
   static uint32_t activeWorkers(uint64_t counters) { return static_cast<uint32_t>(counters & WORKER_MASK); }
   static uint32_t totalWorkers(uint64_t counters) { return static_cast<uint32_t>((counters >> TOTAL_WORKER_SHIFT) & WORKER_MASK); }
   static uint32_t queuedJobs(uint64_t counters) { return static_cast<uint32_t>(counters >> QUEUED_JOB_SHIFT); }
-   
+
   uint32_t maxQueueLen_;
   std::vector<ControlBlock> controlBlocks_;
 

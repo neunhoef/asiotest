@@ -18,20 +18,7 @@
 
 #include "pretty-time.hpp"
 
-inline void cpu_relax() {
-// TODO use <boost/fiber/detail/cpu_relax.hpp> when available (>1.65.0?)
-#if defined(__i386) || defined(_M_IX86) || defined(__x86_64__) || \
-    defined(_M_X64)
-#if defined _WIN32
-  YieldProcessor();
-#else
-  asm volatile("pause" ::: "memory");
-#endif
-#else
-  static constexpr std::chrono::microseconds us0{0};
-  std::this_thread::sleep_for(us0);
-#endif
-}
+#include "spin_lock.hpp"
 
 static
 void set_thread_name (const char *name) {
@@ -41,6 +28,7 @@ void set_thread_name (const char *name) {
 
 #include "adv-worker-farm.hpp"
 //#include "best-worker-farm.hpp"
+#include "manuel-worker-farm.hpp"
 
 
 std::atomic<uint64_t> post_time_counter [32];
@@ -447,13 +435,13 @@ class server {
   tcp::acceptor acceptor_;
   std::shared_ptr<connection<tcp::socket::lowest_layer_type>> connection_;
 
-  WorkerFarm *workerfarm_;
+  std::shared_ptr<WorkerFarm> workerfarm_;
   asio::ssl::context *ssl_context_;
 
   size_t total_connections_;
 
  public:
-  server (size_t num_io_threads, short port, WorkerFarm *workerfarm, asio::ssl::context *ssl_context) :
+  server (size_t num_io_threads, short port, std::shared_ptr<WorkerFarm> &workerfarm, asio::ssl::context *ssl_context) :
     io_contexts_(num_io_threads),
     acceptor_(io_contexts_[0].asio_ioctx_, tcp::endpoint(tcp::v4(), port)),
     workerfarm_(workerfarm),
@@ -472,10 +460,6 @@ class server {
     for (auto &ctx : io_contexts_) {
       ctx.thread_.join();
     }
-  }
-
-  WorkerFarm *get_worker_farm() {
-    return workerfarm_;
   }
 
  private:
@@ -523,8 +507,8 @@ void _signal_handler(int signal) {
 int main(int argc, char* argv[])
 {
   try {
-    if (argc != 7) {
-      std::cerr << "Usage: server4 <port> <num io threads> <num idle worker> <num max worker> <workload> <ssl?>"
+    if (argc < 6) {
+      std::cerr << "Usage: server4 <port> <num io threads> <num idle worker> <num max worker> <workload> <ssl?> <impl?>"
         << std::endl;
 
       return EXIT_FAILURE;
@@ -535,7 +519,8 @@ int main(int argc, char* argv[])
     int num_idle_worker = std::atoi(argv[3]);
     int num_max_worker  = std::atoi(argv[4]);
     globalDelay         = std::atoi(argv[5]);
-    int ssl             = std::atoi(argv[6]);
+    int ssl             = argc < 7 ? 0  : std::atoi(argv[6]);
+    int impl            = argc < 8 ? 0  : std::atoi(argv[7]);
 
     std::cout
       << "IO Threads:     " << num_io_threads << std::endl
@@ -559,9 +544,39 @@ int main(int argc, char* argv[])
       ssl_context.use_private_key_file("key.pem", asio::ssl::context::pem);
     }
 
-    AdvCleverWorkerFarm workerFarm(1000, num_max_worker, num_idle_worker);
 
-    server s(num_io_threads, port, &workerFarm, ssl ? &ssl_context : nullptr);
+    std::vector<std::thread> threads;
+
+    std::shared_ptr<WorkerFarm> workerFarm;
+    bool run_with_threads = false;
+
+    switch (impl) {
+      case 0:
+        workerFarm = std::make_shared<AdvCleverWorkerFarm>
+          (1000, num_max_worker, num_idle_worker);
+        break ;
+
+      case 1:
+        workerFarm = std::make_shared<ManuelWorkerFarm>
+          (num_max_worker, 1000);
+        run_with_threads = true;
+        break ;
+
+
+      default:
+        std::cerr << "Unknown implementation" << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    if (run_with_threads) {
+      for (int i = 0; i < num_max_worker; i++) {
+        threads.emplace_back([workerFarm](){ WorkerStat stat; workerFarm->run(stat); });
+      }
+    }
+
+
+
+    server s(num_io_threads, port, workerFarm, ssl ? &ssl_context : nullptr);
 
     std::signal(SIGINT, _signal_handler);
     signal_callback = [&s]() {
@@ -569,11 +584,8 @@ int main(int argc, char* argv[])
         s.stop();
     };
 
-
-
-
     s.join();
-    workerFarm.stop();
+    workerFarm->stop();
     std::cout<<"Server terminated"<<std::endl;
 
     std::cout<<"post() wait times:"<<std::endl;

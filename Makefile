@@ -53,7 +53,7 @@ server-generic: server-generic.cpp Makefile worker_farm.h lockfree_richard_worke
 #server-generic2: server-generic2.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h adv-worker-farm.hpp
 #	g++ ${CPPFLAGS} -o server-generic2 server-generic2.cpp -std=c++11 -lpthread -I asio/asio/include
 
-server-final: server-final.cpp Makefile worker_farm.h adv-worker-farm.hpp best-worker-farm.hpp
+server-final: server-final.cpp Makefile worker_farm.h adv-worker-farm.hpp manuel-worker-farm.hpp
 	g++ ${CPPFLAGS} -o server-final server-final.cpp -std=c++11 -lpthread -I asio/asio/include -lssl -lcrypto
 
 #server-generic2-ssl: server-generic2-ssl.cpp Makefile worker_farm.h lockfree_richard_worker_farm.h richard_worker_farm.h futex_worker_farm.h
