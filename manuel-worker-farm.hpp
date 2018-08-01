@@ -184,9 +184,6 @@ private:
       auto counters = counters_.fetch_sub(ACTIVE_WORKER_INC, std::memory_order_acquire);
       if (queuedJobs(counters) > 0) {
         counters_.fetch_add(ACTIVE_WORKER_INC, std::memory_order_relaxed);
-        if (controlBlock.id == 0) {
-          std::cout<<"Continue: "<< queuedJobs(counters)<<std::endl;
-        }
         continue;
       }
 
